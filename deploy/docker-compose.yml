@@ -1,0 +1,112 @@
+name: guard
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guard
+      POSTGRES_USER: guard
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - guard-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guard -d guard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GUARD_PORT: "8080"
+      GUARD_HOST: 0.0.0.0
+      GUARD_DATABASE_URL: jdbc:postgresql://postgres:5432/guard
+      GUARD_DATABASE_USER: guard
+      GUARD_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      GUARD_JWT_SECRET_FILE: /run/secrets/jwt_secret
+      GUARD_POLICY_PRIVATE_KEY_PEM_FILE: /run/secrets/policy_private.pem
+      GUARD_POLICY_PUBLIC_KEY_PEM_FILE: /run/secrets/policy_public.pem
+      GUARD_LIVEKIT_URL: wss://${GUARD_LIVEKIT_DOMAIN}
+      GUARD_LIVEKIT_API_URL: http://livekit:7880
+      GUARD_LIVEKIT_API_KEY_FILE: /run/secrets/livekit_api_key
+      GUARD_LIVEKIT_API_SECRET_FILE: /run/secrets/livekit_api_secret
+      GUARD_CORS_ORIGINS: https://${GUARD_WEB_DOMAIN}
+    secrets:
+      - postgres_password
+      - jwt_secret
+      - policy_private.pem
+      - policy_public.pem
+      - livekit_api_key
+      - livekit_api_secret
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: ../admin-web
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/livekit-entrypoint.sh"]
+    volumes:
+      - ./livekit-base.yaml:/etc/livekit-base.yaml:ro
+      - ./livekit-entrypoint.sh:/etc/livekit-entrypoint.sh:ro
+    secrets:
+      - livekit_api_key
+      - livekit_api_secret
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "50000-50100:50000-50100/udp"
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+      web:
+        condition: service_started
+      livekit:
+        condition: service_started
+    environment:
+      GUARD_WEB_DOMAIN: ${GUARD_WEB_DOMAIN}
+      GUARD_LIVEKIT_DOMAIN: ${GUARD_LIVEKIT_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - guard-caddy-data:/data
+      - guard-caddy-config:/config
+
+volumes:
+  guard-postgres:
+  guard-caddy-data:
+  guard-caddy-config:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  policy_private.pem:
+    file: ./secrets/policy_private.pem
+  policy_public.pem:
+    file: ./secrets/policy_public.pem
+  livekit_api_key:
+    file: ./secrets/livekit_api_key
+  livekit_api_secret:
+    file: ./secrets/livekit_api_secret

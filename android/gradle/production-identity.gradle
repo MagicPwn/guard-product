@@ -1,0 +1,145 @@
+/*
+ * Applied only by production.init.gradle.kts. Normal Gradle invocations keep
+ * the existing pilot application ID and debug-compatible release signature.
+ * Groovy is used here because applied Kotlin scripts do not inherit AGP's typed
+ * extension classpath.
+ */
+
+def requiredProductionSetting = { String propertyName, String environmentName ->
+    def value = providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.trim()
+    if (!value) {
+        throw new GradleException(
+            "Missing production signing setting ${propertyName} " +
+                "(or environment variable ${environmentName})"
+        )
+    }
+    value
+}
+
+plugins.withId('com.android.application') {
+    def storePath = requiredProductionSetting(
+        'deviceGuardStoreFile',
+        'DEVICE_GUARD_STORE_FILE'
+    )
+    def storePasswordValue = requiredProductionSetting(
+        'deviceGuardStorePassword',
+        'DEVICE_GUARD_STORE_PASSWORD'
+    )
+    def keyAliasValue = requiredProductionSetting(
+        'deviceGuardKeyAlias',
+        'DEVICE_GUARD_KEY_ALIAS'
+    )
+    def keyPasswordValue = requiredProductionSetting(
+        'deviceGuardKeyPassword',
+        'DEVICE_GUARD_KEY_PASSWORD'
+    )
+    def updateManifestUrlValue = requiredProductionSetting(
+        'deviceGuardUpdateManifestUrl',
+        'DEVICE_GUARD_UPDATE_MANIFEST_URL'
+    )
+    def updatePublicKeyValue = requiredProductionSetting(
+        'deviceGuardUpdatePublicKey',
+        'DEVICE_GUARD_UPDATE_PUBLIC_KEY'
+    )
+    def updatePublicKeySha256Value = requiredProductionSetting(
+        'deviceGuardUpdatePublicKeySha256',
+        'DEVICE_GUARD_UPDATE_PUBLIC_KEY_SHA256'
+    ).replace(':', '').toLowerCase(java.util.Locale.ROOT)
+    def apkSignerSha256Value = requiredProductionSetting(
+        'deviceGuardApkSignerSha256',
+        'DEVICE_GUARD_APK_SIGNER_SHA256'
+    ).replace(':', '').replace(' ', '').toLowerCase(java.util.Locale.ROOT)
+    if (!(apkSignerSha256Value ==~ /[0-9a-f]{64}/)) {
+        throw new GradleException('Production APK signer SHA-256 must be 64 hexadecimal characters')
+    }
+    try {
+        def updateUri = new java.net.URI(updateManifestUrlValue)
+        if (!'https'.equalsIgnoreCase(updateUri.scheme)
+                || !updateUri.host
+                || updateUri.userInfo
+                || updateUri.fragment) {
+            throw new IllegalArgumentException('unclean HTTPS URL')
+        }
+    } catch (Exception ignored) {
+        throw new GradleException('Production update manifest URL must be a clean HTTPS URL')
+    }
+    def publicKeyBytes
+    try {
+        publicKeyBytes = java.util.Base64.decoder.decode(updatePublicKeyValue)
+        def parsedPublicKey = java.security.KeyFactory.getInstance('EC').generatePublic(
+            new java.security.spec.X509EncodedKeySpec(publicKeyBytes)
+        )
+        def expectedParameters = java.security.AlgorithmParameters.getInstance('EC')
+        expectedParameters.init(new java.security.spec.ECGenParameterSpec('secp256r1'))
+        def expectedP256 = expectedParameters.getParameterSpec(
+            java.security.spec.ECParameterSpec
+        )
+        if (!(parsedPublicKey instanceof java.security.interfaces.ECPublicKey)
+                || parsedPublicKey.params.curve != expectedP256.curve
+                || parsedPublicKey.params.generator != expectedP256.generator
+                || parsedPublicKey.params.order != expectedP256.order
+                || parsedPublicKey.params.cofactor != expectedP256.cofactor) {
+            throw new IllegalArgumentException('metadata key must use P-256')
+        }
+    } catch (Exception ignored) {
+        throw new GradleException('Production update public key must be EC X.509 encoded as Base64')
+    }
+    def actualFingerprint = java.security.MessageDigest.getInstance('SHA-256')
+        .digest(publicKeyBytes)
+        .collect { String.format('%02x', it & 0xff) }
+        .join('')
+    if (!(updatePublicKeySha256Value ==~ /[0-9a-f]{64}/)
+            || actualFingerprint != updatePublicKeySha256Value) {
+        throw new GradleException('Production update public-key SHA-256 does not match')
+    }
+
+    def asBuildConfigString = { String value ->
+        '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    }
+
+    android {
+        defaultConfig {
+            applicationId 'il.co.shalommaman.deviceguard'
+            buildConfigField 'String', 'UPDATE_MANIFEST_URL', asBuildConfigString(updateManifestUrlValue)
+            buildConfigField 'String', 'UPDATE_PUBLIC_KEY', asBuildConfigString(updatePublicKeyValue)
+        }
+        signingConfigs {
+            production {
+                storeFile file(storePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+        buildTypes {
+            release {
+                signingConfig signingConfigs.production
+            }
+        }
+    }
+
+    def pythonExecutable = System.getenv('PYTHON') ?: 'python'
+    tasks.register('verifyProductionRelease', Exec) {
+        dependsOn 'assembleRelease'
+        group = 'verification'
+        description = 'Fails unless the production APK identity, signer, version, and update channel match the approved release inputs.'
+        commandLine(
+            pythonExecutable,
+            rootProject.file('tools/verify_pilot_apk.py').absolutePath,
+            '--apk', layout.buildDirectory.file(
+                'outputs/apk/release/app-release.apk').get().asFile.absolutePath,
+            '--expected-package', android.defaultConfig.applicationId,
+            '--expected-version-code', android.defaultConfig.versionCode.toString(),
+            '--expected-version-name', android.defaultConfig.versionName,
+            '--expected-signer-sha256', apkSignerSha256Value,
+            '--expected-manifest-url', updateManifestUrlValue,
+            '--expected-public-key-base64', updatePublicKeyValue,
+            '--expected-public-key-sha256', updatePublicKeySha256Value,
+        )
+    }
+}

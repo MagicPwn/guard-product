@@ -1,0 +1,17 @@
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories {
+        clear()
+        maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        maven { url = uri("https://jitpack.io") }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    settings.dependencyResolutionManagement.repositories {
+        clear()
+        maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        maven { url = uri("https://jitpack.io") }
+        google()
+        mavenCentral()
+    }
+}

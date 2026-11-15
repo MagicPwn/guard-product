@@ -1,0 +1,5 @@
+# Local/CI-only overlay that exposes the API for end-to-end tests.
+services:
+  server:
+    ports:
+      - "8080:8080"

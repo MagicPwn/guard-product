@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pem
+!app/src/debug/res/raw/guard_dev_root_ca.pem
+*.key
+.env
+.env.*
+!.env.example
+captures/

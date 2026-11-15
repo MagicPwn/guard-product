@@ -1,0 +1,168 @@
+name: Guard CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guard-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android tests and APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run Android unit tests, lint, and build APKs
+        working-directory: android
+        run: ./gradlew --no-daemon --max-workers=2 testDebugUnitTest lintRelease assembleDebug verifyChannelDisabledRelease
+      - name: Run Android release-tool tests
+        working-directory: android
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-android-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - name: Upload Android reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-android-reports
+          path: |
+            android/app/build/reports/tests
+            android/app/build/reports/lint-results-release.html
+            android/app/build/reports/lint-results-release.txt
+          if-no-files-found: ignore
+
+  server:
+    name: Server tests and distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run server tests and build distribution
+        working-directory: server
+        run: ./gradlew --no-daemon --max-workers=2 clean test distZip installDist
+      - name: Upload server distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-server-distribution
+          path: |
+            server/build/distributions/*.zip
+            server/build/libs/*.jar
+          if-no-files-found: error
+      - name: Upload server test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-server-test-report
+          path: server/build/reports/tests/test
+          if-no-files-found: ignore
+
+  web:
+    name: Parent PWA tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+      - name: Install dependencies
+        working-directory: admin-web
+        run: npm ci --no-audit --no-fund
+      - name: Run PWA tests
+        working-directory: admin-web
+        run: npm test
+      - name: Build PWA
+        working-directory: admin-web
+        run: npm run build
+      - name: Upload PWA build
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-admin-web
+          path: admin-web/dist
+          if-no-files-found: error
+
+  functional-e2e:
+    name: Full-stack functional E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tests/functional/requirements.txt
+      - name: Install functional test dependencies
+        run: pip install -r tests/functional/requirements.txt
+      - name: Generate disposable deployment secrets
+        working-directory: deploy
+        run: sh ./scripts/generate-secrets.sh
+      - name: Validate Compose configuration
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --quiet
+      - name: Build and start PostgreSQL and server containers
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres server
+      - name: Run functional API E2E suite
+        run: pytest tests/functional -vv --junitxml=e2e-junit.xml
+      - name: Show container logs on failure
+        if: failure()
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --no-color
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-functional-e2e-report
+          path: e2e-junit.xml
+          if-no-files-found: ignore
+      - name: Stop containers
+        if: always()
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v

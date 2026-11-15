@@ -1,0 +1,15 @@
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories {
+        clear()
+        maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    settings.dependencyResolutionManagement.repositories {
+        clear()
+        maven { url = uri("https://repo.huaweicloud.com/repository/maven/") }
+        google()
+        mavenCentral()
+    }
+}
