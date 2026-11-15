@@ -1,5 +1,7 @@
 # Guard 家长监护模式
 
+[![Guard CI](https://github.com/MagicPwn/guard-product/actions/workflows/ci.yml/badge.svg)](https://github.com/MagicPwn/guard-product/actions/workflows/ci.yml)
+
 Guard 是一个面向 Android 专用设备的家长监护系统，由孩子端 DPC、Ktor 服务端和 React 家长 PWA 组成。它复用成熟开源组件，不通过 root、漏洞或无障碍服务绕过 Android 安全边界。
 
 ## 已实现
@@ -53,6 +55,17 @@ Guard 是一个面向 Android 专用设备的家长监护系统，由孩子端 D
 - [设备恢复演练](docs/DEVICE_RECOVERY_DRILL.zh-CN.md)
 - [发布证据](docs/RELEASE_EVIDENCE.zh-CN.md)
 
+## 持续集成与构建产物
+
+`.github/workflows/ci.yml` 在 `main` 推送、Pull Request 和手动触发时执行完整流水线：
+
+- Android：680+ JVM 单测、`lintRelease`、Debug APK、Release APK 和 `verifyChannelDisabledRelease`。
+- 服务端：全量 JVM 测试、`distZip` 发行包和可运行的 `installDist` 目录。
+- 家长 PWA：Vitest 单测、TypeScript 类型检查和 Vite 生产构建。
+- 功能 E2E：用 Docker Compose 启动真实 PostgreSQL 与 server 容器，覆盖认证、配对、签名策略、回滚、设备证明、用量、通知、求助、手动答题、截图同意、租户隔离和账户删除。
+
+成功构建后可从对应 Actions run 下载 `guard-android-debug-apk`、`guard-android-release-apk`、`guard-server-distribution`、`guard-admin-web` 和 `guard-functional-e2e-report`。
+
 ## 快速构建
 
 ```powershell
@@ -72,8 +85,24 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 
 ```powershell
 cd admin-web
-npm install
+npm ci
+npm test
 npm run build
+```
+
+功能 E2E（Linux 或已安装 Docker Compose 的环境）：
+
+```bash
+cd deploy
+sh ./scripts/generate-secrets.sh
+GUARD_WEB_DOMAIN=guard.example.test GUARD_LIVEKIT_DOMAIN=livekit.example.test \
+  docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres server
+cd ..
+python -m pip install -r tests/functional/requirements.txt
+GUARD_BASE_URL=http://127.0.0.1:18080 python -m pytest tests/functional -vv
+cd deploy
+GUARD_WEB_DOMAIN=guard.example.test GUARD_LIVEKIT_DOMAIN=livekit.example.test \
+  docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v
 ```
 
 生产部署前请先生成部署密钥、设置域名、构建带服务端 URL 和策略公钥的 APK，并按安装文档完成真机验证。

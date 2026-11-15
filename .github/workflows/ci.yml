@@ -148,6 +148,8 @@ jobs:
           GUARD_LIVEKIT_DOMAIN: livekit.example.test
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres server
       - name: Run functional API E2E suite
+        env:
+          GUARD_BASE_URL: http://127.0.0.1:18080
         run: pytest tests/functional -vv --junitxml=e2e-junit.xml
       - name: Show container logs on failure
         if: failure()

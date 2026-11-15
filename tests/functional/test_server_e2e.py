@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 
-BASE_URL = os.environ.get("GUARD_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+BASE_URL = os.environ.get("GUARD_BASE_URL", "http://127.0.0.1:18080").rstrip("/")
 WAIT_SECONDS = int(os.environ.get("GUARD_WAIT_SECONDS", "120"))
 PASSWORD = "correct horse battery staple"
 
