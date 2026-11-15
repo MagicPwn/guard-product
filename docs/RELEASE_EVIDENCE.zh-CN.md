@@ -1,6 +1,6 @@
 # Guard 发布证据与验收状态
 
-更新日期：2026-11-13
+更新日期：2026-11-15
 
 本文档把“代码/JVM/模拟器已验证”和“真实硬件/正式密钥/生产安全已验收”严格分开。没有证据的项目不得改成通过。
 
@@ -14,6 +14,9 @@
 | Docker Compose 配置 | `docker compose config --quiet` | **通过** | 无输出，退出码 0 |
 | 服务端/家长端镜像重建 | `docker compose build server web` | **通过** | `guard-server`、`guard-web` 镜像生成 |
 | 健康检查 | `/healthz`、`/api/v1/health` | **通过** | `{"status":"ok","database":true,"version":"0.1.0"}` |
+| GitHub Actions 构建流水线 | `git push origin main` | **通过** | run `43728235241`，Android、服务端、家长 PWA、功能 E2E 四个 job 全部 `success` |
+| GitHub Actions 构建产物 | Actions artifacts | **通过** | Debug/Release APK、服务端发行包、PWA `dist/` 和功能 E2E JUnit 报告均已生成 |
+| NAS Docker + PostgreSQL 功能 E2E | Docker Compose + 真实 Postgres 17.6 | **通过** | server 以非 root UID 10001 运行；功能测试 5/5；Flyway V1–V8 空库迁移成功 |
 | 本地 PostgreSQL 账户删除 E2E | Docker Compose + 真实 Postgres | **通过** | 删除后账户/设备/用量/审计计数 `0,0,0,0`，登录与旧 token 均 401 |
 | 本地 PostgreSQL V8 迁移 | Docker Compose + 真实 Postgres | **通过** | Flyway 显示 V0 baseline 和 V1–V8 全部 `success=true`，`temporary_grants` 的 `revoked_at/revoked_by` 可用 |
 | 本地 PostgreSQL 家长会话撤销 E2E | Docker Compose + 真实 Postgres | **通过** | 两个 active 会话；撤销其他会话后其 JWT 为 401，当前会话 200；账户清理 204，重新登录 401 |
@@ -83,21 +86,28 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 日期 | 2026-11-13 |
-| Android Git 基线 | `5a8e2b7`（工作区有未提交改动） |
-| 根目录版本控制 | 非 Git 工作区 |
+| 日期 | 2026-11-15 |
+| 根目录 Git 基线 | `0bafec2`（`main` 与 `origin/main` 一致） |
+| GitHub Actions | run `43728235241`：Android、服务端、家长 PWA、功能 E2E 四个 job 全部 `success` |
 | 服务端测试 | 通过（全量 45 项） |
-| Android 测试/APK | 通过 |
-| PWA 构建 | 通过 |
-| Docker 镜像 | `server`、`web` 构建通过 |
-| 健康检查 | 通过，数据库 healthy |
-| PostgreSQL 删除 E2E | 通过，目标家庭计数清零，旧 token/登录 401 |
-| PostgreSQL 会话撤销 E2E | 通过，撤销目标会话 JWT 401、当前会话 200、账户清理 204、重新登录 401 |
-| PostgreSQL 策略历史回滚 E2E | 通过，revision 1/2 → 回滚生成 3，历史 payload 恢复，审计存在，临时账户清理 204 |
-| PostgreSQL 临时放行撤销 E2E | 通过，pending 0、apply 409、撤销列表命中、家长列表 revoked、审计 1 条、账户清理 204、重新登录 401 |
-| PostgreSQL 数据保留 E2E | 通过，过期截图 0、pending 通话 expired、31 天前撤销会话 0 |
-| PostgreSQL + LiveKit 结束 E2E | 通过，状态 `ended`，双方 token 409，审计存在；未执行真实双端 WebRTC 房间 |
-| 发布结论 | 代码级候选可继续验证；真实硬件、正式密钥和生产安全未验收 |
+| Android 测试/APK | 通过（693 项 JVM 单测、`lintRelease`、Debug/Release APK、渠道禁用校验） |
+| 家长 PWA | 通过（11 项 Vitest、TypeScript/Vite 生产构建） |
+| Android 发布工具测试 | 通过（100 项；Windows 跳过 19 项 POSIX 权限断言） |
+| 构建产物 | `guard-android-debug-apk`、`guard-android-release-apk`、`guard-server-distribution`、`guard-admin-web`、`guard-functional-e2e-report` 均已生成 |
+| 真实容器 E2E | 通过（Docker Compose、PostgreSQL 17.6、server 以非 root UID 10001 运行） |
+| 功能 E2E 覆盖 | 通过（5/5：健康检查、认证/会话、配对/策略/回滚/token、用量/通知/求助/手动答题/审计、截图同意/通话拒绝、跨租户隔离/账户删除） |
+| 数据库迁移 | 通过（Flyway V1–V8，PostgreSQL 17.6 空库初始化成功） |
+| NAS 验证 | 通过（`DXP4800P-gzb`，Docker 26.1.0 / Compose 2.26.1，E2E 端口 `18080`） |
+| 本轮修复 | secrets 权限从 `0600` 改为目录 `0700`/文件 `0444`，修复非 root server 无法读取挂载 secret；E2E 端口避开 NAS `8080` 冲突 |
+| 发布结论 | 代码、CI 产物和真实 PostgreSQL 容器 E2E 已通过；真实 Device Owner 硬件、正式密钥、OEM 和生产安全仍未验收 |
+
+### 2026-11-15 CI 与 NAS 复核
+
+- GitHub Actions：<https://github.com/MagicPwn/guard-product/actions/runs/43728235241>，结论 `success`。
+- 服务端容器由 `server/Dockerfile` 真实构建；PostgreSQL 17.6 健康检查通过，Flyway V1–V8 在空库完成迁移。
+- NAS 上以非 root UID 10001 启动 server，确认 `/healthz` 返回 `{"status":"ok","database":true,"version":"0.1.0"}`。
+- 功能 E2E 在 CI 和 NAS 上均 5/5 通过；此前 CI 失败的根因是 Compose 将 `0600` secret 原样挂载，server 非 root 用户无法读取。
+- 本地 Android `lintRelease`、`verifyChannelDisabledRelease` 与 NAS Docker 复验均通过。
 
 ## 6. 证据归档模板
 
