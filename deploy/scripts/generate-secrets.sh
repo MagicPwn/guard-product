@@ -17,7 +17,8 @@ openssl rand -base64 32 > "$secrets/postgres_password"
 openssl rand -base64 48 > "$secrets/jwt_secret"
 printf 'API%s' "$(openssl rand -base64 18 | tr '+/' 'AB' | tr -d '\n')" > "$secrets/livekit_api_key"
 openssl rand -base64 32 > "$secrets/livekit_api_secret"
-chmod 600 "$secrets"/*
+chmod 700 "$secrets"
+chmod 444 "$secrets"/*
 
 key_id="$(sha256sum "$der" | cut -d' ' -f1)"
 public_key="$(base64 -w0 "$der")"
