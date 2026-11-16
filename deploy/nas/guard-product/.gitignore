@@ -1,0 +1,8 @@
+app/
+app.next/
+data/
+secrets/
+incoming/
+backups/
+.update-*/
+.env

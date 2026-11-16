@@ -1,0 +1,63 @@
+name: guard-product
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guard
+      POSTGRES_USER: guard
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guard -d guard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEBIAN_MIRROR: ${GUARD_DEBIAN_MIRROR:-http://mirrors.aliyun.com}
+    image: guard-product-server:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GUARD_PORT: "8080"
+      GUARD_HOST: 0.0.0.0
+      GUARD_DATABASE_URL: jdbc:postgresql://postgres:5432/guard
+      GUARD_DATABASE_USER: guard
+      GUARD_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      GUARD_JWT_SECRET_FILE: /run/secrets/jwt_secret
+      GUARD_POLICY_PRIVATE_KEY_PEM_FILE: /run/secrets/policy_private.pem
+      GUARD_POLICY_PUBLIC_KEY_PEM_FILE: /run/secrets/policy_public.pem
+      GUARD_CORS_ORIGINS: ${GUARD_CORS_ORIGINS:-http://192.168.68.147:18080}
+    secrets:
+      - postgres_password
+      - jwt_secret
+      - policy_private.pem
+      - policy_public.pem
+    ports:
+      - "${GUARD_API_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  policy_private.pem:
+    file: ./secrets/policy_private.pem
+  policy_public.pem:
+    file: ./secrets/policy_public.pem
