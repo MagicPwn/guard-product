@@ -59,12 +59,28 @@ Guard 是一个面向 Android 专用设备的家长监护系统，由孩子端 D
 
 `.github/workflows/ci.yml` 在 `main` 推送、Pull Request 和手动触发时执行完整流水线：
 
-- Android：680+ JVM 单测、`lintRelease`、Debug APK、Release APK 和 `verifyChannelDisabledRelease`。
+- Android：693 项 JVM 单测、`lintRelease`、Debug APK、Release APK 和 `verifyChannelDisabledRelease`。
 - 服务端：全量 JVM 测试、`distZip` 发行包和可运行的 `installDist` 目录。
 - 家长 PWA：Vitest 单测、TypeScript 类型检查和 Vite 生产构建。
 - 功能 E2E：用 Docker Compose 启动真实 PostgreSQL 与 server 容器，覆盖认证、配对、签名策略、回滚、设备证明、用量、通知、求助、手动答题、截图同意、租户隔离和账户删除。
 
 成功构建后可从对应 Actions run 下载 `guard-android-debug-apk`、`guard-android-release-apk`、`guard-server-distribution`、`guard-admin-web` 和 `guard-functional-e2e-report`。
+
+## GitHub Release 发布
+
+`.github/workflows/release.yml` 在推送 `v*` tag 或手动指定 tag 时执行。只有 Android、服务端、家长 PWA 和真实 PostgreSQL 功能 E2E 全部通过后，才会创建 GitHub Release，并挂载以下文件：
+
+- Debug APK、Release Candidate APK、Android 测试与 lint 报告。
+- 服务端发行包、可执行 jar 和测试报告。
+- 家长 PWA 生产构建包。
+- 功能 E2E JUnit 报告、发布证据和 `SHA256SUMS.txt`。
+
+```bash
+git tag -a v0.5.4 -m "Guard v0.5.4 pilot candidate"
+git push origin v0.5.4
+```
+
+Release 会标记为 pilot candidate（pre-release）。当前 Release Candidate APK 使用既有 pilot 签名，不是正式生产签名；真机 Device Owner、OEM 和生产环境仍未验收。
 
 ## 快速构建
 

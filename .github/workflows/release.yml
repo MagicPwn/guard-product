@@ -1,0 +1,236 @@
+name: Guard Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.5.4"
+        required: true
+        default: "v0.5.4"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: guard-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  android:
+    name: Build Android release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Verify the preinstalled Android SDK
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_HOME:-}"
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run Android tests, lint, and build APKs
+        working-directory: android
+        run: ./gradlew --no-daemon --max-workers=2 testDebugUnitTest lintRelease assembleDebug verifyChannelDisabledRelease
+      - name: Run Android release-tool tests
+        working-directory: android
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - name: Stage Android release assets
+        working-directory: android
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          DECLARED="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          test "$DECLARED" = "$VERSION" || {
+            echo "Release tag ${RELEASE_TAG} does not match Android versionName ${DECLARED}" >&2
+            exit 1
+          }
+          mkdir -p staging
+          cp app/build/outputs/apk/debug/app-debug.apk "staging/guard-${VERSION}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "staging/guard-${VERSION}-release-candidate.apk"
+          zip -qr "staging/guard-${VERSION}-android-reports.zip" app/build/reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: android/staging/*
+          if-no-files-found: error
+
+  server:
+    name: Build server release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run server tests and build distribution
+        working-directory: server
+        run: ./gradlew --no-daemon --max-workers=2 clean test distZip installDist
+      - name: Stage server release assets
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p staging
+          cp server/build/distributions/*.zip "staging/guard-${VERSION}-server-dist.zip"
+          cp server/build/libs/*.jar "staging/guard-${VERSION}-server.jar"
+          zip -qr "staging/guard-${VERSION}-server-test-report.zip" server/build/reports/tests/test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-server
+          path: staging/*
+          if-no-files-found: error
+
+  web:
+    name: Build parent PWA release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+      - name: Install, test, and build PWA
+        working-directory: admin-web
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+      - name: Stage PWA release asset
+        working-directory: admin-web
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p staging
+          (cd dist && zip -qr "../staging/guard-${VERSION}-admin-web.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-web
+          path: admin-web/staging/*
+          if-no-files-found: error
+
+  functional-e2e:
+    name: Verify real PostgreSQL functional E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tests/functional/requirements.txt
+      - name: Install functional test dependencies
+        run: pip install -r tests/functional/requirements.txt
+      - name: Generate disposable deployment secrets
+        working-directory: deploy
+        run: sh ./scripts/generate-secrets.sh
+      - name: Build and start PostgreSQL and server containers
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build postgres server
+      - name: Run functional API E2E suite
+        env:
+          GUARD_BASE_URL: http://127.0.0.1:18080
+        run: pytest tests/functional -vv --junitxml=e2e-junit.xml
+      - name: Show container logs on failure
+        if: failure()
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --no-color
+      - name: Stage E2E report
+        if: always()
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p staging
+          if test -f e2e-junit.xml; then
+            cp e2e-junit.xml "staging/guard-${VERSION}-functional-e2e.xml"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-e2e
+          path: staging/*
+          if-no-files-found: ignore
+      - name: Stop containers
+        if: always()
+        working-directory: deploy
+        env:
+          GUARD_WEB_DOMAIN: guard.example.test
+          GUARD_LIVEKIT_DOMAIN: livekit.example.test
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v
+
+  publish:
+    name: Publish GitHub Release
+    needs: [android, server, web, functional-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Add release evidence and build manifest
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          cp docs/RELEASE_EVIDENCE.zh-CN.md release-assets/
+          cat > release-assets/BUILD_INFO.txt <<EOF
+          release_tag=${RELEASE_TAG}
+          source_commit=${GITHUB_SHA}
+          workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          android_version=0.5.4
+          server_version=0.1.0
+          admin_web_version=0.1.0
+          EOF
+          (cd release-assets && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Guard ${{ env.RELEASE_TAG }} pilot candidate
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: release-assets/*
+          body: |
+            ## Guard ${{ env.RELEASE_TAG }} pilot candidate
+
+            Automated build from commit `${{ github.sha }}`.
+
+            ### Assets
+
+            - Android debug APK and release-candidate APK.
+            - Server distribution, executable jar, and test report.
+            - Parent PWA production bundle.
+            - Functional E2E JUnit report, release evidence, and `SHA256SUMS.txt`.
+
+            ### Important limitations
+
+            - The release-candidate APK currently uses the existing pilot signing key, not a production distribution key.
+            - Real Device Owner hardware, OEM background restrictions, camera/microphone hardware, official LiveKit/TURN infrastructure, and production secrets are not validated by this release.
+            - See `RELEASE_EVIDENCE.zh-CN.md` for the exact verification scope.
+
+            Verification run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
