@@ -1,5 +1,6 @@
 package com.example.lockdowndpc.ui
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -25,6 +26,22 @@ import com.example.lockdowndpc.R
  * showing Hebrew.
  */
 internal object AppLocales {
+
+    private const val DEFAULT_LANGUAGE_TAG = "zh-CN"
+    private const val PREFS_NAME = "guard_display_language"
+    private const val KEY_DEFAULT_APPLIED = "default_chinese_applied"
+
+    /** Applies the shipped default once when no app-specific language exists yet. */
+    fun ensureDefault(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_DEFAULT_APPLIED, false)) return
+        if (AppCompatDelegate.getApplicationLocales().isEmpty()) {
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags(DEFAULT_LANGUAGE_TAG)
+            )
+        }
+        prefs.edit().putBoolean(KEY_DEFAULT_APPLIED, true).apply()
+    }
 
     /** The language currently in force, resolved through the same tags Android stores. */
     fun current(): LanguageChoice =
@@ -54,6 +71,7 @@ internal object AppLocales {
     @StringRes
     fun labelOf(choice: LanguageChoice): Int = when (choice) {
         LanguageChoice.SYSTEM -> R.string.language_option_system
+        LanguageChoice.CHINESE -> R.string.language_option_chinese
         LanguageChoice.ENGLISH -> R.string.language_option_english
         LanguageChoice.HEBREW -> R.string.language_option_hebrew
     }

@@ -1,6 +1,6 @@
 {
-  "name": "Guard Parent Console",
-  "short_name": "Guard",
+  "name": "守护家长控制台",
+  "short_name": "守护",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f7f4",

@@ -28,6 +28,7 @@ import {
   type QuizTriggerForm,
   type QuizTriggerType
 } from "../policy";
+import { errorText, useI18n } from "../i18n";
 
 const CallPanel = lazy(() => import("../components/CallPanel")
   .then((module) => ({ default: module.CallPanel })));
@@ -35,6 +36,7 @@ const CallPanel = lazy(() => import("../components/CallPanel")
 export function DeviceDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const { t, formatDate, formatTime } = useI18n();
   const [device, setDevice] = useState<Device | null>(null);
   const [envelope, setEnvelope] = useState<PolicyEnvelope | null>(null);
   const [policyHistory, setPolicyHistory] = useState<PolicyHistoryItem[]>([]);
@@ -110,7 +112,7 @@ export function DeviceDetailPage() {
       setHelpRequests(nextHelpRequests);
       setError(null);
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot load this device");
+      setError(errorText(problem, "Cannot load this device", t));
     } finally {
       setLoading(false);
     }
@@ -213,11 +215,11 @@ export function DeviceDetailPage() {
       const created = await api.sendNotice(id, kind, noticeMessage.trim());
       setNotices((current) => [created, ...current]);
       setNoticeMessage("");
-      setNotice(kind === "callback"
+      setNotice(t(kind === "callback"
         ? "Callback request queued. The child sees it on the next notice poll."
-        : "Task reminder queued. The child sees it on the next notice poll.");
+        : "Task reminder queued. The child sees it on the next notice poll."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot send the notice");
+      setError(errorText(problem, "Cannot send the notice", t));
     }
   }
 
@@ -230,9 +232,9 @@ export function DeviceDetailPage() {
       const updated = await api.respondToHelpRequest(id, request.id, reply);
       setHelpRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
       setHelpReplies((current) => ({ ...current, [request.id]: "" }));
-      setNotice("Reply queued for the child's next help-request poll.");
+      setNotice(t("Reply queued for the child's next help-request poll."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot reply to the help request");
+      setError(errorText(problem, "Cannot reply to the help request", t));
     }
   }
 
@@ -289,9 +291,9 @@ export function DeviceDetailPage() {
     try {
       const grant = await api.grantApp(id, grantPackage, grantMinutes);
       setGrants((current) => [grant, ...current]);
-      setNotice("Allowance queued. The child device applies it on its next sync, then reports it back.");
+      setNotice(t("Allowance queued. The child device applies it on its next sync, then reports it back."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot create the temporary allowance");
+      setError(errorText(problem, "Cannot create the temporary allowance", t));
     }
   }
 
@@ -301,9 +303,9 @@ export function DeviceDetailPage() {
     try {
       const grant = await api.revokeGrant(id, grantId);
       setGrants((current) => current.map((item) => item.id === grant.id ? grant : item));
-      setNotice("Allowance revoked. The child device removes it on its next sync.");
+      setNotice(t("Allowance revoked. The child device removes it on its next sync."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot revoke the temporary allowance");
+      setError(errorText(problem, "Cannot revoke the temporary allowance", t));
     }
   }
 
@@ -314,9 +316,9 @@ export function DeviceDetailPage() {
     try {
       const created = await api.triggerQuiz(id, quizPackage);
       setQuizTriggers((current) => [created, ...current.filter((item) => item.id !== created.id)]);
-      setNotice("Quiz request queued. The child sees it on the next policy sync or remote poll.");
+      setNotice(t("Quiz request queued. The child sees it on the next policy sync or remote poll."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot trigger the quiz");
+      setError(errorText(problem, "Cannot trigger the quiz", t));
     }
   }
 
@@ -331,16 +333,18 @@ export function DeviceDetailPage() {
       setEnvelope(published);
       api.policyHistory(id).then(setPolicyHistory).catch(() => undefined);
       setForm(formFromPolicyPayload(published.payload));
-      setNotice(`Published signed revision ${published.revision}. The device will pick it up on its next sync.`);
+      setNotice(t("Published signed revision {revision}. The device will pick it up on its next sync.",
+        { revision: published.revision }));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot publish the policy");
+      setError(errorText(problem, "Cannot publish the policy", t));
     } finally {
       setSaving(false);
     }
   }
 
   async function rollbackPolicy(revision: number) {
-    if (!window.confirm(`Roll back to policy revision ${revision}? The server will publish it as a new, higher revision.`)) return;
+    if (!window.confirm(t("Roll back to policy revision {revision}? The server will publish it as a new, higher revision.",
+      { revision }))) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -349,21 +353,22 @@ export function DeviceDetailPage() {
       setEnvelope(rolledBack);
       setForm(formFromPolicyPayload(rolledBack.payload));
       setPolicyHistory(await api.policyHistory(id));
-      setNotice(`Revision ${revision} was restored as signed revision ${rolledBack.revision}.`);
+      setNotice(t("Revision {revision} was restored as signed revision {restored}.",
+        { revision, restored: rolledBack.revision }));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot roll back the policy");
+      setError(errorText(problem, "Cannot roll back the policy", t));
     } finally {
       setSaving(false);
     }
   }
 
   async function revoke() {
-    if (!window.confirm("Revoke this device? Its token stops working and cached policy remains until the device re-syncs or is wiped.")) return;
+    if (!window.confirm(t("Revoke this device? Its token stops working and cached policy remains until the device re-syncs or is wiped."))) return;
     try {
       await api.revokeDevice(id);
       navigate("/");
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot revoke the device");
+      setError(errorText(problem, "Cannot revoke the device", t));
     }
   }
 
@@ -371,9 +376,9 @@ export function DeviceDetailPage() {
     try {
       const request = await api.requestCall(id, kind);
       setCalls((current) => [request, ...current]);
-      setNotice("Request sent. The child device must accept it before a LiveKit token is issued.");
+      setNotice(t("Request sent. The child device must accept it before a LiveKit token is issued."));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot request a call");
+      setError(errorText(problem, "Cannot request a call", t));
     }
   }
 
@@ -385,7 +390,7 @@ export function DeviceDetailPage() {
       setActiveCallId(call.id);
       setCredentials(value);
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "The child has not accepted or LiveKit is not configured");
+      setError(errorText(problem, "The child has not accepted or LiveKit is not configured", t));
     }
   }
 
@@ -396,9 +401,9 @@ export function DeviceDetailPage() {
       setActiveCallId(null);
       setCredentials(null);
     }
-    setNotice(call.kind === "screenshot"
+    setNotice(t(call.kind === "screenshot"
       ? "Screenshot request ended. The child device can no longer upload against it."
-      : "Call ended and the LiveKit room was revoked.");
+      : "Call ended and the LiveKit room was revoked."));
   }
 
   async function endActiveCall() {
@@ -416,26 +421,26 @@ export function DeviceDetailPage() {
       const blob = await api.screenshotImage(screenshot.id);
       setPreview({ id: screenshot.id, url: URL.createObjectURL(blob) });
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Cannot load the screenshot");
+      setError(errorText(problem, "Cannot load the screenshot", t));
     }
   }
 
-  if (loading) return <p>Loading device?</p>;
-  if (!device) return <p className="error">{error ?? "Device not found"}</p>;
+  if (loading) return <p>{t("Loading device...")}</p>;
+  if (!device) return <p className="error">{error ?? t("Device not found")}</p>;
 
   return (
     <section className="detail-layout">
       <div className="page-title">
         <div>
-          <Link to="/">? Devices</Link>
+          <Link to="/">{t("Devices")}</Link>
           <h1>{device.name}</h1>
           <p className="mono">{device.device_id}</p>
         </div>
         <div className="row-actions">
           <span className={`badge ${device.revoked ? "danger" : device.confirmed ? "ok" : "warn"}`}>
-            {device.revoked ? "Revoked" : device.confirmed ? "Protected" : "Awaiting confirmation"}
+            {device.revoked ? t("Revoked") : device.confirmed ? t("Protected") : t("Awaiting confirmation")}
           </span>
-          {!device.revoked && <button className="danger-button" onClick={() => void revoke()}>Revoke</button>}
+          {!device.revoked && <button className="danger-button" onClick={() => void revoke()}>{t("Revoke")}</button>}
         </div>
       </div>
 
@@ -445,206 +450,202 @@ export function DeviceDetailPage() {
       <form className="card" onSubmit={publish}>
         <div className="page-title">
           <div>
-            <h2>Policy</h2>
+            <h2>{t("Policy")}</h2>
             <p className="muted">
               {envelope
-                ? `Latest signed revision ${envelope.revision} ? key ${envelope.key_id.slice(0, 12)}?`
-                : "No policy has been published yet."}
+                ? t("Latest signed revision {revision} · key {key}...", {
+                  revision: envelope.revision, key: envelope.key_id.slice(0, 12)
+                })
+                : t("No policy has been published yet.")}
             </p>
           </div>
           <label className="toggle">
             <input type="checkbox" checked={form.enabled}
               onChange={(event) => update("enabled", event.target.checked)} />
-            Enable Guard
+            {t("Enable Guard")}
           </label>
         </div>
         <div className="form-grid">
-          <label>Timezone (IANA)
+          <label>{t("Timezone (IANA)")}
             <input value={form.timezone} onChange={(event) => update("timezone", event.target.value)} />
           </label>
-          <label>Daily quiz attempts
+          <label>{t("Daily quiz attempts")}
             <input type="number" min={0} max={1000} value={form.maxAttemptsPerDay}
               onChange={(event) => update("maxAttemptsPerDay", Number(event.target.value))} />
           </label>
-          <label>Reward minutes
+          <label>{t("Reward minutes")}
             <input type="number" min={0} max={1440} value={form.rewardMinutes}
               onChange={(event) => update("rewardMinutes", Number(event.target.value))} />
           </label>
-          <label>Wrong-answer cooldown (seconds)
+          <label>{t("Wrong-answer cooldown (seconds)")}
             <input type="number" min={0} max={86400} value={form.cooldownSeconds}
               onChange={(event) => update("cooldownSeconds", Number(event.target.value))} />
           </label>
-          <label>Budget warning (minutes remaining)
+          <label>{t("Budget warning (minutes remaining)")}
             <input type="number" min={0} max={1440} value={form.budgetWarningMinutes}
               onChange={(event) => update("budgetWarningMinutes", Number(event.target.value))} />
           </label>
-          <label>Continuous-use reminder (minutes)
+          <label>{t("Continuous-use reminder (minutes)")}
             <input type="number" min={0} max={1440} value={form.continuousUseReminderMinutes}
               onChange={(event) => update("continuousUseReminderMinutes", Number(event.target.value))} />
           </label>
           <p className="hint wide">
-            Set either reminder to 0 to disable it. The child device shows a local notification once per app per day
-            when a daily budget is within the warning threshold, and once per foreground session when continuous use
-            reaches the reminder threshold. Always-allowed, always-blocked and protected apps are never reminded.
+            {t("Set either reminder to 0 to disable it. The child device shows a local notification once per app per day when a daily budget is within the warning threshold, and once per foreground session when continuous use reaches the reminder threshold. Always-allowed, always-blocked and protected apps are never reminded.")}
           </p>
           <label className="toggle wide">
             <input type="checkbox" checked={form.launcherEnabled}
               onChange={(event) => update("launcherEnabled", event.target.checked)} />
-            Use Guard as the managed HOME launcher on the child device
+            {t("Use Guard as the managed HOME launcher on the child device")}
           </label>
           <label className="toggle wide">
             <input type="checkbox" checked={form.quizGateEnabled}
               onChange={(event) => update("quizGateEnabled", event.target.checked)} />
-            Allow a signed quiz reward after the daily budget is exhausted
+            {t("Allow a signed quiz reward after the daily budget is exhausted")}
           </label>
           <div className="wide quiz-filter-editor">
-            <h3>Quiz pack filters</h3>
+            <h3>{t("Quiz pack filters")}</h3>
             <p className="hint">
-              Blank lists mean no restriction. Comma-separated values are matched against signed question metadata.
-              The child device must already trust and import a signed pack whose questions carry that metadata.
+              {t("Blank lists mean no restriction. Comma-separated values are matched against signed question metadata. The child device must already trust and import a signed pack whose questions carry that metadata.")}
             </p>
             <div className="form-grid">
-              <label>Questions per reward attempt
+              <label>{t("Questions per reward attempt")}
                 <input type="number" min={1} max={10} value={form.quizQuestionCount}
                   onChange={(event) => update("quizQuestionCount", Number(event.target.value))} />
               </label>
-              <label>Subjects
-                <input placeholder="mathematics, science" value={form.quizSubjects}
+              <label>{t("Subjects")}
+                <input placeholder={t("mathematics, science")} value={form.quizSubjects}
                   onChange={(event) => update("quizSubjects", event.target.value)} />
               </label>
-              <label>Grades (0 = unspecified)
-                <input placeholder="3, 4, 5" value={form.quizGrades}
+              <label>{t("Grades (0 = unspecified)")}
+                <input placeholder={t("3, 4, 5")} value={form.quizGrades}
                   onChange={(event) => update("quizGrades", event.target.value)} />
               </label>
-              <label>Difficulties
-                <input placeholder="easy, medium" value={form.quizDifficulties}
+              <label>{t("Difficulties")}
+                <input placeholder={t("easy, medium")} value={form.quizDifficulties}
                   onChange={(event) => update("quizDifficulties", event.target.value)} />
               </label>
-              <label>Languages
-                <input placeholder="en, zh-CN" value={form.quizLanguages}
+              <label>{t("Languages")}
+                <input placeholder={t("en, zh-CN")} value={form.quizLanguages}
                   onChange={(event) => update("quizLanguages", event.target.value)} />
               </label>
-              <label>Tags
-                <input placeholder="arithmetic, fractions" value={form.quizTags}
+              <label>{t("Tags")}
+                <input placeholder={t("arithmetic, fractions")} value={form.quizTags}
                   onChange={(event) => update("quizTags", event.target.value)} />
               </label>
             </div>
           </div>
           <div className="wide quiz-filter-editor">
-            <h3>Task-page emergency contacts</h3>
+            <h3>{t("Task-page emergency contacts")}</h3>
             <p className="hint">
-              These contacts appear on the child task page and open the system dialer after a tap.
-              Guard never places a call or sends a message automatically. Leave the list empty if
-              no trusted numbers should be shown.
+              {t("These contacts appear on the child task page and open the system dialer after a tap. Guard never places a call or sends a message automatically. Leave the list empty if no trusted numbers should be shown.")}
             </p>
             <div className="row-actions">
               <button type="button" className="secondary" disabled={form.helpContacts.length >= 3}
-                onClick={addHelpContact}>Add contact</button>
-              <span className="hint">{form.helpContacts.length} of 3 contacts</span>
+                onClick={addHelpContact}>{t("Add contact")}</button>
+              <span className="hint">{t("{count} of 3 contacts", { count: form.helpContacts.length })}</span>
             </div>
             {form.helpContacts.length === 0
-              ? <p className="empty">No task-page contacts configured.</p>
+              ? <p className="empty">{t("No task-page contacts configured.")}</p>
               : form.helpContacts.map((contact, index) => (
                 <article className="question-card" key={index}>
                   <div className="form-grid">
-                    <label>Label
-                      <input maxLength={40} placeholder="Parent, school office, trusted adult"
+                    <label>{t("Label")}
+                      <input maxLength={40} placeholder={t("Parent, school office, trusted adult")}
                         value={contact.label}
                         onChange={(event) => updateHelpContact(index, { label: event.target.value })} />
                     </label>
-                    <label>Phone number
+                    <label>{t("Phone number")}
                       <input maxLength={24} inputMode="tel" placeholder="+86 138 0000 0000"
                         value={contact.phone}
                         onChange={(event) => updateHelpContact(index, { phone: event.target.value })} />
                     </label>
                   </div>
                   <button type="button" className="link-button"
-                    onClick={() => removeHelpContact(index)}>Remove contact</button>
+                    onClick={() => removeHelpContact(index)}>{t("Remove contact")}</button>
                 </article>
               ))}
           </div>
           <div className="wide quiz-filter-editor">
-            <h3>Automatic quiz triggers</h3>
+            <h3>{t("Automatic quiz triggers")}</h3>
             <p className="hint">
-              Trigger targets must also have a daily budget or allowed window. Trigger rules are part of the
-              signed policy; always-blocked, system, dialer, HOME and Guard apps are rejected.
+              {t("Trigger targets must also have a daily budget or allowed window. Trigger rules are part of the signed policy; always-blocked, system, dialer, HOME and Guard apps are rejected.")}
             </p>
             <div className="row-actions">
-              <button type="button" className="secondary" onClick={() => addTrigger("total_usage")}>Add total-usage trigger</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("app_enter")}>Add app-entry trigger</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("continuous_use")}>Add continuous-use trigger</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("schedule_start")}>Add schedule-start trigger</button>
+              <button type="button" className="secondary" onClick={() => addTrigger("total_usage")}>{t("Add total-usage trigger")}</button>
+              <button type="button" className="secondary" onClick={() => addTrigger("app_enter")}>{t("Add app-entry trigger")}</button>
+              <button type="button" className="secondary" onClick={() => addTrigger("continuous_use")}>{t("Add continuous-use trigger")}</button>
+              <button type="button" className="secondary" onClick={() => addTrigger("schedule_start")}>{t("Add schedule-start trigger")}</button>
             </div>
             {form.quizTriggers.length === 0
-              ? <p className="empty">No automatic quiz triggers. The child can still open the quiz manually.</p>
+              ? <p className="empty">{t("No automatic quiz triggers. The child can still open the quiz manually.")}</p>
               : form.quizTriggers.map((trigger, index) => (
                 <article className="question-card trigger-card" key={index}>
                   <div className="page-title">
-                    <strong>Trigger {index + 1}</strong>
+                    <strong>{t("Trigger {number}", { number: index + 1 })}</strong>
                     <select value={trigger.type}
                       onChange={(event) => updateTrigger(index, { type: event.target.value as QuizTriggerType })}>
-                      <option value="total_usage">Total usage</option>
-                      <option value="app_enter">App entry</option>
-                      <option value="continuous_use">Continuous foreground use</option>
-                      <option value="schedule_start">Schedule start</option>
+                      <option value="total_usage">{t("Total usage")}</option>
+                      <option value="app_enter">{t("App entry")}</option>
+                      <option value="continuous_use">{t("Continuous foreground use")}</option>
+                      <option value="schedule_start">{t("Schedule start")}</option>
                     </select>
                   </div>
                   <div className="form-grid">
-                    <label className="wide">Target packages (comma separated)
+                    <label className="wide">{t("Target packages (comma separated)")}
                       <input value={trigger.packages}
                         onChange={(event) => updateTrigger(index, { packages: event.target.value })} />
                     </label>
                     {(trigger.type === "total_usage" || trigger.type === "continuous_use") && (
-                      <label>{trigger.type === "total_usage" ? "Combined usage threshold (minutes)" : "Continuous use threshold (minutes)"}
+                      <label>{t(trigger.type === "total_usage" ? "Combined usage threshold (minutes)" : "Continuous use threshold (minutes)")}
                         <input type="number" min={1} max={1440} value={trigger.minutes}
                           onChange={(event) => updateTrigger(index, { minutes: Number(event.target.value) })} />
                       </label>
                     )}
                     {trigger.type === "app_enter" && (
-                      <label>Delay after entry (seconds)
+                      <label>{t("Delay after entry (seconds)")}
                         <input type="number" min={0} max={3600} value={trigger.delaySeconds}
                           onChange={(event) => updateTrigger(index, { delaySeconds: Number(event.target.value) })} />
                       </label>
                     )}
                     {trigger.type === "schedule_start" && (
                       <>
-                        <label>Days (1 = Monday, 7 = Sunday)
+                        <label>{t("Days (1 = Monday, 7 = Sunday)")}
                           <input value={trigger.days}
                             onChange={(event) => updateTrigger(index, { days: event.target.value })} />
                         </label>
-                        <label>Start minute (0-1439)
+                        <label>{t("Start minute (0-1439)")}
                           <input type="number" min={0} max={1439} value={trigger.startMinute}
                             onChange={(event) => updateTrigger(index, { startMinute: Number(event.target.value) })} />
                         </label>
                       </>
                     )}
                   </div>
-                  <button type="button" className="link-button" onClick={() => removeTrigger(index)}>Remove trigger</button>
+                  <button type="button" className="link-button" onClick={() => removeTrigger(index)}>{t("Remove trigger")}</button>
                 </article>
               ))}
           </div>
           <div className="wide app-policy-editor">
-            <h3>App policies</h3>
-            <p className="hint">Installed apps are reported by the device on sync. A blocked app stays blocked and cannot be temporarily allowed. An always-allowed app bypasses daily budgets, allowed windows and quiz gates.</p>
+            <h3>{t("App policies")}</h3>
+            <p className="hint">{t("Installed apps are reported by the device on sync. A blocked app stays blocked and cannot be temporarily allowed. An always-allowed app bypasses daily budgets, allowed windows and quiz gates.")}</p>
             <div className="row-actions category-actions">
               <select value={selectedCategory} onChange={(event) => setSelectedCategory(Number(event.target.value))}>
                 {Object.entries(CATEGORY_LABELS).map(([value, label]) =>
-                  <option key={value} value={value}>{label}</option>)}
+                  <option key={value} value={value}>{t(label)}</option>)}
               </select>
               <input type="number" min={0} max={1440} value={categoryMinutes}
                 onChange={(event) => setCategoryMinutes(Number(event.target.value))} />
-              <button type="button" className="secondary" onClick={() => applyToCategory("minutes")}>Apply minutes to category</button>
-              <button type="button" className="secondary" onClick={() => applyToCategory("blocked")}>Block category</button>
-              <button type="button" className="secondary" onClick={() => applyToCategory("always")}>Always allow category</button>
+              <button type="button" className="secondary" onClick={() => applyToCategory("minutes")}>{t("Apply minutes to category")}</button>
+              <button type="button" className="secondary" onClick={() => applyToCategory("blocked")}>{t("Block category")}</button>
+              <button type="button" className="secondary" onClick={() => applyToCategory("always")}>{t("Always allow category")}</button>
             </div>
             <div className="table-wrap"><table>
-              <thead><tr><th>App</th><th>Category</th><th>Daily minutes</th><th>Blocked</th><th>Always allowed</th><th /></tr></thead>
+              <thead><tr><th>{t("App")}</th><th>{t("Category")}</th><th>{t("Daily minutes")}</th><th>{t("Blocked")}</th><th>{t("Always allowed")}</th><th /></tr></thead>
               <tbody>
-                {form.apps.length === 0 ? <tr><td colSpan={6} className="empty">No app policies yet. Add an installed app below.</td></tr> :
+                {form.apps.length === 0 ? <tr><td colSpan={6} className="empty">{t("No app policies yet. Add an installed app below.")}</td></tr> :
                   form.apps.map((app, index) => (
                     <tr key={app.packageName}>
                       <td><strong>{app.label}</strong><div className="mono">{app.packageName}</div></td>
-                      <td>{CATEGORY_LABELS[app.category] ?? `Category ${app.category}`}</td>
+                      <td>{CATEGORY_LABELS[app.category] ? t(CATEGORY_LABELS[app.category]) : t("Category {category}", { category: app.category })}</td>
                       <td><input type="number" min={0} max={1440} disabled={app.blocked || app.alwaysAllowed}
                         value={app.dailyMinutes ?? ""}
                         onChange={(event) => updateApp(index, {
@@ -660,68 +661,68 @@ export function DeviceDetailPage() {
                           alwaysAllowed: event.target.checked,
                           blocked: event.target.checked ? false : app.blocked
                         })} /></td>
-                      <td><button type="button" className="link-button" onClick={() => removeApp(index)}>Remove</button></td>
+                      <td><button type="button" className="link-button" onClick={() => removeApp(index)}>{t("Remove")}</button></td>
                     </tr>
                   ))}
               </tbody>
             </table></div>
             <div className="row-actions">
               <select value="" onChange={(event) => addPackage(event.target.value)}>
-                <option value="">Add installed app...</option>
+                <option value="">{t("Add installed app...")}</option>
                 {catalog.filter((app) => !form.apps.some((row) => row.packageName === app.package_name))
                   .map((app) => <option key={app.package_name} value={app.package_name}>{app.label} ({app.package_name})</option>)}
               </select>
-              <input placeholder="or enter package name" value={newPackage}
+              <input placeholder={t("or enter package name")} value={newPackage}
                 onChange={(event) => setNewPackage(event.target.value)} />
-              <button type="button" className="secondary" onClick={() => addPackage(newPackage)}>Add package</button>
+              <button type="button" className="secondary" onClick={() => addPackage(newPackage)}>{t("Add package")}</button>
             </div>
           </div>
-          <label className="wide">Allowed windows (JSON; day 1 = Monday, start in minutes)
+          <label className="wide">{t("Allowed windows (JSON; day 1 = Monday, start in minutes)")}
             <textarea rows={8} value={form.schedulesText}
               onChange={(event) => update("schedulesText", event.target.value)} />
           </label>
         </div>
         <div className="row-actions">
-          <button className="primary" disabled={saving}>{saving ? "Signing and publishing?" : "Publish signed policy"}</button>
-          <span className="hint">The server replaces revision with a strictly increasing value.</span>
+          <button className="primary" disabled={saving}>{saving ? t("Signing and publishing...") : t("Publish signed policy")}</button>
+          <span className="hint">{t("The server replaces revision with a strictly increasing value.")}</span>
         </div>
         {envelope && <details className="wide">
-          <summary>Signed envelope</summary>
+          <summary>{t("Signed envelope")}</summary>
           <pre>{JSON.stringify(envelope, null, 2)}</pre>
         </details>}
         <details className="wide">
-          <summary>Revision history ({policyHistory.length})</summary>
-          {policyHistory.length === 0 ? <p className="empty">No signed revisions yet.</p> :
+          <summary>{t("Revision history ({count})", { count: policyHistory.length })}</summary>
+          {policyHistory.length === 0 ? <p className="empty">{t("No signed revisions yet.")}</p> :
             <ul className="call-list">
               {policyHistory.map((revision) => (
                 <li key={revision.revision}>
-                  <span className="mono">Revision {revision.revision}</span>
-                  {envelope?.revision === revision.revision && <span className="badge ok">current</span>}
-                  <span className="muted">key {revision.key_id.slice(0, 12)}...</span>
-                  <span className="muted">{new Date(revision.created_at).toLocaleString()}</span>
+                  <span className="mono">{t("Revision {revision}", { revision: revision.revision })}</span>
+                  {envelope?.revision === revision.revision && <span className="badge ok">{t("current")}</span>}
+                  <span className="muted">{t("key {key}...", { key: revision.key_id.slice(0, 12) })}</span>
+                  <span className="muted">{formatDate(revision.created_at)}</span>
                   {envelope?.revision !== revision.revision && <button type="button" className="secondary"
                     onClick={() => void rollbackPolicy(revision.revision)} disabled={saving}>
-                    Roll back to this revision
+                    {t("Roll back to this revision")}
                   </button>}
                 </li>
               ))}
             </ul>}
-          <p className="hint">Rollback validates the historical payload again and signs it as a new revision, so devices never move backwards.</p>
+          <p className="hint">{t("Rollback validates the historical payload again and signs it as a new revision, so devices never move backwards.")}</p>
         </details>
       </form>
 
       <section className="card">
-        <h2>Usage summary</h2>
-        {usage.length === 0 ? <p className="empty">No usage summaries uploaded yet.</p> :
+        <h2>{t("Usage summary")}</h2>
+        {usage.length === 0 ? <p className="empty">{t("No usage summaries uploaded yet.")}</p> :
           <div className="table-wrap"><table>
-            <thead><tr><th>Day</th><th>Apps</th><th>Health</th></tr></thead>
+            <thead><tr><th>{t("Day")}</th><th>{t("Apps")}</th><th>{t("Health")}</th></tr></thead>
             <tbody>
               {usage.map((report) => (
                 <tr key={report.day}>
                   <td>{report.day}</td>
                   <td>{Object.entries(report.app_minutes)
                     .sort((a, b) => b[1] - a[1])
-                    .map(([name, minutes]) => <div key={name}><span className="mono">{name}</span> ? {minutes} min</div>)}</td>
+                    .map(([name, minutes]) => <div key={name}><span className="mono">{name}</span> · {t("{minutes} min", { minutes })}</div>)}</td>
                   <td><code>{JSON.stringify(report.health)}</code></td>
                 </tr>
               ))}
@@ -730,32 +731,31 @@ export function DeviceDetailPage() {
       </section>
 
       <section className="card">
-        <h2>Child help requests</h2>
+        <h2>{t("Child help requests")}</h2>
         <p className="muted">
-          These are requests the child explicitly sent from the task page. A request never changes
-          time limits or unlocks an app. Replies are delivered on the child&apos;s next sync.
+          {t("These are requests the child explicitly sent from the task page. A request never changes time limits or unlocks an app. Replies are delivered on the child&apos;s next sync.")}
         </p>
-        {helpRequests.length === 0 ? <p className="empty">No help requests have been sent.</p> : (
+        {helpRequests.length === 0 ? <p className="empty">{t("No help requests have been sent.")}</p> : (
           <ul className="call-list">
             {helpRequests.map((request) => (
               <li key={request.id}>
                 <div>
-                  <strong>{request.reason.replaceAll("_", " ")}</strong>
+                  <strong>{t(request.reason.replaceAll("_", " "))}</strong>
                   {request.target_package && <span className="mono"> {request.target_package}</span>}
-                  <div className="muted">{new Date(request.created_at).toLocaleString()}</div>
+                  <div className="muted">{formatDate(request.created_at)}</div>
                 </div>
                 <span className={`badge ${request.status === "answered" || request.status === "acknowledged"
-                  ? "ok" : request.status === "pending" ? "warn" : "danger"}`}>{request.status}</span>
+                  ? "ok" : request.status === "pending" ? "warn" : "danger"}`}>{t(request.status)}</span>
                 {request.message && <span>{request.message}</span>}
-                {request.parent_reply && <span className="notice">Your reply: {request.parent_reply}</span>}
+                {request.parent_reply && <span className="notice">{t("Your reply: {reply}", { reply: request.parent_reply })}</span>}
                 {request.status !== "expired" && (
                   <span className="row-actions">
-                    <input maxLength={1000} placeholder="Write a short reply"
+                    <input maxLength={1000} placeholder={t("Write a short reply")}
                       value={helpReplies[request.id] ?? ""}
                       onChange={(event) => setHelpReplies((current) =>
                         ({ ...current, [request.id]: event.target.value }))} />
                     <button className="secondary" disabled={!(helpReplies[request.id] ?? "").trim()}
-                      onClick={() => void replyToHelp(request)}>Reply</button>
+                      onClick={() => void replyToHelp(request)}>{t("Reply")}</button>
                   </span>
                 )}
               </li>
@@ -767,74 +767,76 @@ export function DeviceDetailPage() {
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Parent-triggered quiz</h2>
+            <h2>{t("Parent-triggered quiz")}</h2>
             <p className="muted">
-              The child device still applies the signed quiz gate, reward, cooldown, daily-attempt
-              and quiz-pack checks. It picks the request up on its next sync or remote poll.
+              {t("The child device still applies the signed quiz gate, reward, cooldown, daily-attempt and quiz-pack checks. It picks the request up on its next sync or remote poll.")}
             </p>
           </div>
           <div className="row-actions">
             <select value={quizPackage} onChange={(event) => setQuizPackage(event.target.value)}>
-              <option value="">Choose managed app...</option>
+              <option value="">{t("Choose managed app...")}</option>
               {form.apps
                 .filter((app) => !app.blocked && !app.alwaysAllowed
                   && (app.dailyMinutes !== null || form.schedulesText.includes(`"${app.packageName}"`)))
                 .map((app) => <option key={app.packageName} value={app.packageName}>{app.label}</option>)}
             </select>
             <button className="secondary" disabled={!quizPackage || !form.quizGateEnabled}
-              onClick={() => void triggerQuizNow()}>Trigger quiz now</button>
+              onClick={() => void triggerQuizNow()}>{t("Trigger quiz now")}</button>
           </div>
         </div>
-        {!form.quizGateEnabled && <p className="hint">Enable the quiz gate and publish the policy first.</p>}
-        {quizTriggers.length === 0 ? <p className="empty">No parent-triggered quizzes.</p> : <ul className="call-list">
+        {!form.quizGateEnabled && <p className="hint">{t("Enable the quiz gate and publish the policy first.")}</p>}
+        {quizTriggers.length === 0 ? <p className="empty">{t("No parent-triggered quizzes.")}</p> : <ul className="call-list">
           {quizTriggers.map((item) => (
             <li key={item.id}>
               <span className="mono">{item.package_name}</span>
               <span className={`badge ${item.status === "completed" ? "ok"
                 : item.status === "pending" || item.status === "accepted" ? "warn" : "danger"}`}>
-                {item.status}
+                {t(item.status)}
               </span>
               {item.detail && <span className="muted">{item.detail}</span>}
-              <span className="muted">{new Date(item.created_at).toLocaleString()}</span>
+              <span className="muted">{formatDate(item.created_at)}</span>
             </li>
           ))}
         </ul>}
       </section>
 
       <section className="card">
-        <h2>Quiz results</h2>
-        <p className="muted">Only answer metadata is uploaded: question ids, correctness, filters and the rewarded outcome. Free-text answers are not sent to the parent service.</p>
-        {quizResults.length === 0 ? <p className="empty">No quiz attempts have been uploaded yet.</p> :
+        <h2>{t("Quiz results")}</h2>
+        <p className="muted">{t("Only answer metadata is uploaded: question ids, correctness, filters and the rewarded outcome. Free-text answers are not sent to the parent service.")}</p>
+        {quizResults.length === 0 ? <p className="empty">{t("No quiz attempts have been uploaded yet.")}</p> :
           <div className="quiz-result-list">
             {quizResults.map((result) => (
               <article className="question-card" key={result.id}>
                 <div className="page-title">
                   <div>
                     <strong className="mono">{result.target_package}</strong>
-                    <div className="muted">{new Date(result.occurred_at).toLocaleString()}</div>
+                    <div className="muted">{formatDate(result.occurred_at)}</div>
                   </div>
                   <div className="row-actions">
                     <span className={`badge ${result.correct_count === result.question_count ? "ok" : "warn"}`}>
-                      {result.correct_count}/{result.question_count} correct
+                      {t("{correct}/{total} correct", { correct: result.correct_count, total: result.question_count })}
                     </span>
-                    {result.reward_granted && <span className="badge ok">Reward granted</span>}
+                    {result.reward_granted && <span className="badge ok">{t("Reward granted")}</span>}
                   </div>
                 </div>
                 <p className="hint">
-                  Policy revision {result.policy_revision} ? quiz version {result.quiz_version}
-                  {result.trigger_id ? ` ? ${result.trigger_id}` : " ? manual attempt"}
+                  {t("Policy revision {revision} · quiz version {version}{trigger}", {
+                    revision: result.policy_revision,
+                    version: result.quiz_version,
+                    trigger: result.trigger_id ? t(" · {trigger}", { trigger: result.trigger_id }) : t(" · manual attempt")
+                  })}
                 </p>
                 <div className="row-actions">
                   {result.questions.map((question) => (
                     <span className={`badge ${question.correct ? "ok" : "danger"}`} key={question.question_id}>
-                      {question.question_id} {question.correct ? "correct" : "wrong"}
+                      {question.question_id} {t(question.correct ? "correct" : "wrong")}
                     </span>
                   ))}
                 </div>
                 <p className="hint">
                   {[...new Set(result.questions.map((question) =>
-                    [question.subject, question.grade ? `grade ${question.grade}` : "",
-                      question.difficulty, question.language].filter(Boolean).join(" ? ")))].join(" ? ")}
+                    [t(question.subject), question.grade ? t("grade {grade}", { grade: question.grade }) : "",
+                      t(question.difficulty), question.language].filter(Boolean).join(" · ")))].join(" · ")}
                 </p>
               </article>
             ))}
@@ -844,22 +846,22 @@ export function DeviceDetailPage() {
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Temporary allowance</h2>
-            <p className="muted">The child device applies one queued allowance after its next successful sync. It cannot override an always-blocked package.</p>
+            <h2>{t("Temporary allowance")}</h2>
+            <p className="muted">{t("The child device applies one queued allowance after its next successful sync. It cannot override an always-blocked package.")}</p>
           </div>
           <div className="row-actions">
             <select value={grantPackage} onChange={(event) => setGrantPackage(event.target.value)}>
-              <option value="">Choose app...</option>
+              <option value="">{t("Choose app...")}</option>
               {form.apps.filter((app) => !app.blocked && !app.alwaysAllowed).map((app) =>
                 <option key={app.packageName} value={app.packageName}>{app.label}</option>)}
             </select>
             <input type="number" min={1} max={1440} value={grantMinutes}
               onChange={(event) => setGrantMinutes(Number(event.target.value))} />
             <button className="secondary" disabled={!grantPackage}
-              onClick={() => void grantTemporaryAllowance()}>Grant once</button>
+              onClick={() => void grantTemporaryAllowance()}>{t("Grant once")}</button>
           </div>
         </div>
-        {grants.length === 0 ? <p className="empty">No temporary allowances.</p> : <ul className="call-list">
+        {grants.length === 0 ? <p className="empty">{t("No temporary allowances.")}</p> : <ul className="call-list">
           {grants.map((grant) => {
             const expired = !grant.revoked && new Date(grant.expires_at).getTime() <= Date.now();
             const status = grant.revoked ? "Revoked" : grant.applied ? "Applied" : expired ? "Expired" : "Queued";
@@ -867,14 +869,14 @@ export function DeviceDetailPage() {
             return (
               <li key={grant.id}>
                 <span className="mono">{grant.package_name}</span>
-                <span>{grant.minutes} min</span>
-                <span className={`badge ${badge}`}>{status}</span>
-                <span className="muted">{new Date(grant.created_at).toLocaleString()}</span>
+                <span>{t("{minutes} min", { minutes: grant.minutes })}</span>
+                <span className={`badge ${badge}`}>{t(status)}</span>
+                <span className="muted">{formatDate(grant.created_at)}</span>
                 {grant.revoked && grant.revoked_at
-                  ? <span className="muted">Revoked {new Date(grant.revoked_at).toLocaleString()}</span>
+                  ? <span className="muted">{t("Revoked {date}", { date: formatDate(grant.revoked_at) })}</span>
                   : null}
                 {!grant.revoked && !expired
-                  ? <button className="secondary" onClick={() => void revokeTemporaryAllowance(grant.id)}>Revoke</button>
+                  ? <button className="secondary" onClick={() => void revokeTemporaryAllowance(grant.id)}>{t("Revoke")}</button>
                   : null}
               </li>
             );
@@ -885,35 +887,35 @@ export function DeviceDetailPage() {
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Authorized contact</h2>
-            <p className="muted">A request is not a call. The child device must explicitly accept it, and media is not recorded.</p>
+            <h2>{t("Authorized contact")}</h2>
+            <p className="muted">{t("A request is not a call. The child device must explicitly accept it, and media is not recorded.")}</p>
           </div>
           <div className="row-actions">
-            <button className="secondary" onClick={() => void requestCall("audio")}>Voice</button>
-            <button className="secondary" onClick={() => void requestCall("video")}>Video</button>
-            <button className="secondary" onClick={() => void requestCall("screen")}>Screen share</button>
-            <button className="secondary" onClick={() => void requestCall("screenshot")}>Screenshot</button>
+            <button className="secondary" onClick={() => void requestCall("audio")}>{t("Voice")}</button>
+            <button className="secondary" onClick={() => void requestCall("video")}>{t("Video")}</button>
+            <button className="secondary" onClick={() => void requestCall("screen")}>{t("Screen share")}</button>
+            <button className="secondary" onClick={() => void requestCall("screenshot")}>{t("Screenshot")}</button>
           </div>
         </div>
-        {calls.length === 0 ? <p className="empty">No call requests.</p> : <ul className="call-list">
+        {calls.length === 0 ? <p className="empty">{t("No call requests.")}</p> : <ul className="call-list">
           {calls.map((call) => (
             <li key={call.id}>
-              <span>{call.kind}</span>
-              <span className={`badge ${call.status === "accepted" ? "ok" : call.status === "pending" ? "warn" : call.status === "ended" ? "neutral" : "danger"}`}>{call.status}</span>
-              <span className="muted">{new Date(call.created_at).toLocaleTimeString()}</span>
-              {call.ended_at && <span className="muted">ended {new Date(call.ended_at).toLocaleTimeString()}</span>}
+              <span>{t(call.kind)}</span>
+              <span className={`badge ${call.status === "accepted" ? "ok" : call.status === "pending" ? "warn" : call.status === "ended" ? "neutral" : "danger"}`}>{t(call.status)}</span>
+              <span className="muted">{formatTime(call.created_at)}</span>
+              {call.ended_at && <span className="muted">{t("ended {time}", { time: formatTime(call.ended_at) })}</span>}
               {call.status === "accepted" && call.kind !== "screenshot" &&
-                <button className="secondary" onClick={() => void join(call)}>Join</button>}
+                <button className="secondary" onClick={() => void join(call)}>{t("Join")}</button>}
               {call.status === "accepted" && call.kind === "screenshot" &&
-                <span className="muted">Waiting for the child to tap capture</span>}
+                <span className="muted">{t("Waiting for the child to tap capture")}</span>}
               {call.status === "accepted" && call.id !== activeCallId &&
                 <button className="danger-button" onClick={() => void endRequest(call).catch((problem) => {
-                  setError(problem instanceof Error ? problem.message : "Cannot end this request");
-                })}>End</button>}
+                  setError(errorText(problem, "Cannot end this request", t));
+                })}>{t("End")}</button>}
             </li>
           ))}
         </ul>}
-        {credentials && <Suspense fallback={<p className="muted">Loading media client...</p>}>
+        {credentials && <Suspense fallback={<p className="muted">{t("Loading media client...")}</p>}>
           <CallPanel credentials={credentials} kind={callKind} onEnd={endActiveCall} />
         </Suspense>}
       </section>
@@ -921,58 +923,58 @@ export function DeviceDetailPage() {
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Visible notices</h2>
-            <p className="muted">These are visible child-device notifications, not background monitoring. Acknowledgements are recorded.</p>
+            <h2>{t("Visible notices")}</h2>
+            <p className="muted">{t("These are visible child-device notifications, not background monitoring. Acknowledgements are recorded.")}</p>
           </div>
           <div className="row-actions">
-            <input maxLength={200} placeholder="Optional message (200 characters)"
+            <input maxLength={200} placeholder={t("Optional message (200 characters)")}
               value={noticeMessage} onChange={(event) => setNoticeMessage(event.target.value)} />
-            <button className="secondary" onClick={() => void sendNotice("callback")}>Ask to call back</button>
-            <button className="secondary" onClick={() => void sendNotice("task")}>Ask to do a task</button>
+            <button className="secondary" onClick={() => void sendNotice("callback")}>{t("Ask to call back")}</button>
+            <button className="secondary" onClick={() => void sendNotice("task")}>{t("Ask to do a task")}</button>
           </div>
         </div>
-        {notices.length === 0 ? <p className="empty">No notices sent yet.</p> : <ul className="call-list">
+        {notices.length === 0 ? <p className="empty">{t("No notices sent yet.")}</p> : <ul className="call-list">
           {notices.map((item) => (
             <li key={item.id}>
-              <span>{item.kind === "callback" ? "Please call back" : "Please complete the task"}</span>
-              <span className={`badge ${item.status === "acknowledged" ? "ok" : item.status === "pending" ? "warn" : "danger"}`}>{item.status}</span>
+              <span>{t(item.kind === "callback" ? "Please call back" : "Please complete the task")}</span>
+              <span className={`badge ${item.status === "acknowledged" ? "ok" : item.status === "pending" ? "warn" : "danger"}`}>{t(item.status)}</span>
               {item.message && <span>{item.message}</span>}
-              <span className="muted">{new Date(item.created_at).toLocaleString()}</span>
+              <span className="muted">{formatDate(item.created_at)}</span>
             </li>
           ))}
         </ul>}
-        {notices.some((item) => item.status === "acknowledged") && <p className="hint">The latest acknowledged notice remains in this history until retention cleanup.</p>}
+        {notices.some((item) => item.status === "acknowledged") && <p className="hint">{t("The latest acknowledged notice remains in this history until retention cleanup.")}</p>}
       </section>
 
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Consented screenshots</h2>
-            <p className="muted">One-shot captures expire 15 minutes after upload. The child must approve Android's screen-capture dialog for every request.</p>
+            <h2>{t("Consented screenshots")}</h2>
+            <p className="muted">{t("One-shot captures expire 15 minutes after upload. The child must approve Android's screen-capture dialog for every request.")}</p>
           </div>
         </div>
-        {screenshots.length === 0 ? <p className="empty">No screenshots available.</p> : <ul className="call-list">
+        {screenshots.length === 0 ? <p className="empty">{t("No screenshots available.")}</p> : <ul className="call-list">
           {screenshots.map((screenshot) => (
             <li key={screenshot.id}>
               <span className="mono">{screenshot.width} x {screenshot.height}</span>
-              <span className="muted">{new Date(screenshot.created_at).toLocaleString()}</span>
-              <span className="badge warn">Expires {new Date(screenshot.expires_at).toLocaleTimeString()}</span>
-              <button className="secondary" onClick={() => void viewScreenshot(screenshot)}>View</button>
+              <span className="muted">{formatDate(screenshot.created_at)}</span>
+              <span className="badge warn">{t("Expires {time}", { time: formatTime(screenshot.expires_at) })}</span>
+              <button className="secondary" onClick={() => void viewScreenshot(screenshot)}>{t("View")}</button>
             </li>
           ))}
         </ul>}
         {preview && <div className="screenshot-preview">
-          <button className="secondary" onClick={() => setPreview(null)}>Close image</button>
-          <img src={preview.url} alt={`Consented screenshot ${preview.id}`} />
+          <button className="secondary" onClick={() => setPreview(null)}>{t("Close image")}</button>
+          <img src={preview.url} alt={t("Consented screenshot {id}", { id: preview.id })} />
         </div>}
       </section>
 
       <section className="card">
-        <h2>Audit</h2>
-        {audit.length === 0 ? <p className="empty">No audit events.</p> : <ul className="audit-list">
+        <h2>{t("Audit")}</h2>
+        {audit.length === 0 ? <p className="empty">{t("No audit events.")}</p> : <ul className="audit-list">
           {audit.map((event) => (
             <li key={event.id}>
-              <span className="muted">{new Date(event.created_at).toLocaleString()}</span>
+              <span className="muted">{formatDate(event.created_at)}</span>
               <strong>{event.event}</strong>
               <span className="mono">{event.detail}</span>
             </li>

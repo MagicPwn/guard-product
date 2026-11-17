@@ -25,6 +25,7 @@ import {
   type QuizSigningIdentity,
   type SignedQuizPack
 } from "../quiz";
+import { errorText, useI18n } from "../i18n";
 
 const TYPE_LABELS: Record<QuizQuestionType, string> = {
   single_choice: "Single choice",
@@ -34,9 +35,11 @@ const TYPE_LABELS: Record<QuizQuestionType, string> = {
 };
 
 export function QuizPacksPage() {
+  const { t, formatDate } = useI18n();
+  const messageOf = (problem: unknown) => errorText(problem, "The operation failed", t);
   const [identity, setIdentity] = useState<QuizSigningIdentity | null>(null);
   const [packs, setPacks] = useState<QuizPackSummary[]>([]);
-  const [title, setTitle] = useState("Home learning pack");
+  const [title, setTitle] = useState(() => t("Home learning pack"));
   const [version, setVersion] = useState(1);
   const [questions, setQuestions] = useState<EditableQuestion[]>([emptyQuestion("single_choice")]);
   const [signed, setSigned] = useState<SignedQuizPack | null>(null);
@@ -48,7 +51,7 @@ export function QuizPacksPage() {
   const [busy, setBusy] = useState(false);
   const [upstream, setUpstream] = useState<QuizUpstreamConfig | null>(null);
   const [upstreamEvents, setUpstreamEvents] = useState<QuizUpstreamEvent[]>([]);
-  const [upstreamTitle, setUpstreamTitle] = useState("Trusted upstream quiz pack");
+  const [upstreamTitle, setUpstreamTitle] = useState(() => t("Trusted upstream quiz pack"));
   const [upstreamUrl, setUpstreamUrl] = useState("");
   const [upstreamPublicKey, setUpstreamPublicKey] = useState("");
   const [upstreamInterval, setUpstreamInterval] = useState(60);
@@ -132,7 +135,8 @@ export function QuizPacksPage() {
       const created = await createSigningIdentity();
       setIdentity(created);
       setUpstreamPublicKey((current) => current.trim() ? current : created.publicKeyBase64);
-      setNotice(`Created signing key ${created.keyId.slice(0, 16)}... This browser keeps the private key; export the public key to install it on a child device only if you need manual trust.`);
+      setNotice(t("Created signing key {key}... This browser keeps the private key; export the public key to install it on a child device only if you need manual trust.",
+        { key: created.keyId.slice(0, 16) }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -144,10 +148,10 @@ export function QuizPacksPage() {
     if (!identity) return;
     try {
       await navigator.clipboard.writeText(identity.publicKeyBase64);
-      setNotice("Quiz signing public key copied to the clipboard.");
+      setNotice(t("Quiz signing public key copied to the clipboard."));
       setError(null);
     } catch {
-      setError("Clipboard access was denied; download the public key instead.");
+      setError(t("Clipboard access was denied; download the public key instead."));
     }
   }
 
@@ -158,8 +162,8 @@ export function QuizPacksPage() {
 
   async function rotateSigningKey() {
     if (!identity) return;
-    if (!window.confirm(
-      "Rotate the quiz signing key? The current key will sign a transition that authorizes the new key, and this browser will stop using the old active key. Keep this browser profile backed up.")) return;
+    if (!window.confirm(t(
+      "Rotate the quiz signing key? The current key will sign a transition that authorizes the new key, and this browser will stop using the old active key. Keep this browser profile backed up."))) return;
     setRotationBusy(true);
     setError(null);
     setNotice(null);
@@ -173,7 +177,8 @@ export function QuizPacksPage() {
       setTransitions(await api.quizKeyTransitions());
       setBasePack(null);
       setPublishMode("full");
-      setNotice(`New quiz signing key ${accepted.new_key_id.slice(0, 16)}... is active. The transition signed by the old key is now available to paired devices.`);
+      setNotice(t("New quiz signing key {key}... is active. The transition signed by the old key is now available to paired devices.",
+        { key: accepted.new_key_id.slice(0, 16) }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -187,15 +192,15 @@ export function QuizPacksPage() {
   }
 
   async function revokeTransition(transition: QuizKeyTransition) {
-    if (!window.confirm(
-      "Revoke this key transition? Devices will stop trusting the new key after they apply the revocation, unless the active quiz pack still uses it.")) return;
+    if (!window.confirm(t(
+      "Revoke this key transition? Devices will stop trusting the new key after they apply the revocation, unless the active quiz pack still uses it."))) return;
     setRotationBusy(true);
     setError(null);
     setNotice(null);
     try {
       await api.revokeQuizKey(transition.id);
       setTransitions(await api.quizKeyTransitions());
-      setNotice("Key transition revoked. The server refuses to revoke a key currently signing the active quiz pack.");
+      setNotice(t("Key transition revoked. The server refuses to revoke a key currently signing the active quiz pack."));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -216,7 +221,7 @@ export function QuizPacksPage() {
     try {
       const pack = await signCurrent();
       downloadText(`guard-quiz-v${pack.version}.json`, pack.envelope, "application/json;charset=utf-8");
-      setNotice(`Signed version ${pack.version} and downloaded the envelope for manual import.`);
+      setNotice(t("Signed version {version} and downloaded the envelope for manual import.", { version: pack.version }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -239,7 +244,8 @@ export function QuizPacksPage() {
       setSigned(pack);
       setBasePack(parsed);
       setPublishMode("delta");
-      setNotice(`Version ${created.version} was verified by the server, hosted, and activated for your paired devices.`);
+      setNotice(t("Version {version} was verified by the server, hosted, and activated for your paired devices.",
+        { version: created.version }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -269,7 +275,12 @@ export function QuizPacksPage() {
       setSigned(full);
       setBasePack(parsed);
       setPublishMode("delta");
-      setNotice(`Version ${created.version} was hosted with a verified ${delta.operationCount}-operation delta against version ${delta.baseVersion} (${Math.ceil(delta.byteLength / 1024)} KiB).`);
+      setNotice(t("Version {version} was hosted with a verified {operations}-operation delta against version {base} ({size} KiB).", {
+        version: created.version,
+        operations: delta.operationCount,
+        base: delta.baseVersion,
+        size: Math.ceil(delta.byteLength / 1024)
+      }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -304,7 +315,7 @@ export function QuizPacksPage() {
       setUpstreamInterval(saved.interval_minutes);
       setUpstreamEnabled(saved.enabled);
       await reloadUpstream();
-      setNotice("Trusted upstream configuration saved. The scheduler will check it at the configured interval.");
+      setNotice(t("Trusted upstream configuration saved. The scheduler will check it at the configured interval."));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -320,10 +331,12 @@ export function QuizPacksPage() {
       const result = await api.syncQuizUpstream();
       await reloadUpstream();
       if (result.ok) {
-        const version = result.version === null ? "" : ` Version ${result.version}.`;
-        setNotice(`Upstream sync completed: ${result.status}.${version}`);
+        const version = result.version === null ? "" : t(" Version {version}.", { version: result.version });
+        setNotice(t("Upstream sync completed: {status}{version}", {
+          status: t(result.status), version
+        }));
       } else {
-        setError(`Upstream sync failed: ${result.message || result.status}`);
+        setError(t("Upstream sync failed: {message}", { message: result.message || t(result.status) }));
       }
     } catch (problem) {
       setError(messageOf(problem));
@@ -333,7 +346,7 @@ export function QuizPacksPage() {
   }
 
   async function deleteUpstream() {
-    if (!window.confirm("Delete this trusted upstream configuration? The active hosted quiz pack will remain available.")) return;
+    if (!window.confirm(t("Delete this trusted upstream configuration? The active hosted quiz pack will remain available."))) return;
     setUpstreamBusy(true);
     setError(null);
     setNotice(null);
@@ -341,7 +354,7 @@ export function QuizPacksPage() {
       await api.deleteQuizUpstream();
       setUpstream(null);
       setUpstreamEvents([]);
-      setNotice("Trusted upstream configuration deleted. The active hosted pack was not changed.");
+      setNotice(t("Trusted upstream configuration deleted. The active hosted pack was not changed."));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -351,7 +364,7 @@ export function QuizPacksPage() {
 
   async function loadServerPack(pack: QuizPackSummary) {
     if (!identity) {
-      setError("Load or create the matching signing key before editing this pack");
+      setError(t("Load or create the matching signing key before editing this pack"));
       return;
     }
     setBusy(true);
@@ -367,8 +380,8 @@ export function QuizPacksPage() {
       setBasePack(detail.active ? parsed : null);
       setPublishMode(detail.active ? "delta" : "full");
       setNotice(detail.active
-        ? `Loaded active version ${parsed.version}. The next publish can use a delta against this base.`
-        : `Loaded inactive version ${parsed.version}. Activate it first or publish a complete pack before using deltas.`);
+        ? t("Loaded active version {version}. The next publish can use a delta against this base.", { version: parsed.version })
+        : t("Loaded inactive version {version}. Activate it first or publish a complete pack before using deltas.", { version: parsed.version }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -381,7 +394,7 @@ export function QuizPacksPage() {
     event.target.value = "";
     if (!file) return;
     if (!identity) {
-      setError("Create or restore the matching signing key before importing a pack for editing");
+      setError(t("Create or restore the matching signing key before importing a pack for editing"));
       return;
     }
     setBusy(true);
@@ -394,7 +407,9 @@ export function QuizPacksPage() {
       setSigned(null);
       setBasePack(parsed);
       setPublishMode("delta");
-      setNotice(`Imported signed version ${parsed.version}. It is available as the delta base; the editor targets version ${parsed.version + 1}.`);
+      setNotice(t("Imported signed version {version}. It is available as the delta base; the editor targets version {next}.", {
+        version: parsed.version, next: parsed.version + 1
+      }));
     } catch (problem) {
       setError(messageOf(problem));
     } finally {
@@ -433,17 +448,17 @@ export function QuizPacksPage() {
     }
   }
 
-  if (loading) return <p>Loading quiz packs...</p>;
+  if (loading) return <p>{t("Loading quiz packs...")}</p>;
 
   return (
     <section>
       <div className="page-title">
         <div>
-          <h1>Signed quiz packs</h1>
-          <p className="muted">Author questions here. The private signing key stays in this browser; only a verified signed envelope is uploaded.</p>
+          <h1>{t("Signed quiz packs")}</h1>
+          <p className="muted">{t("Author questions here. The private signing key stays in this browser; only a verified signed envelope is uploaded.")}</p>
         </div>
         <button className="secondary" disabled={busy} onClick={() => void refreshPacks().catch((problem) => setError(messageOf(problem)))}>
-          Refresh
+          {t("Refresh")}
         </button>
       </div>
 
@@ -453,62 +468,64 @@ export function QuizPacksPage() {
       <section className="card signing-card">
         <div className="page-title">
           <div>
-            <h2>Quiz signing key</h2>
-            <p className="muted">The private P-256 key is non-extractable and stored in this browser profile. Back up the browser profile if you need to edit these packs later.</p>
+            <h2>{t("Quiz signing key")}</h2>
+            <p className="muted">{t("The private P-256 key is non-extractable and stored in this browser profile. Back up the browser profile if you need to edit these packs later.")}</p>
           </div>
-          {!identity && <button className="primary" disabled={busy} onClick={() => void generateKey()}>Create signing key</button>}
+          {!identity && <button className="primary" disabled={busy} onClick={() => void generateKey()}>{t("Create signing key")}</button>}
         </div>
         {identity ? (
           <>
             <dl className="key-details">
-              <dt>Key id</dt><dd className="mono">{identity.keyId}</dd>
-              <dt>Created</dt><dd>{new Date(identity.createdAt).toLocaleString()}</dd>
+              <dt>{t("Key id")}</dt><dd className="mono">{identity.keyId}</dd>
+              <dt>{t("Created")}</dt><dd>{formatDate(identity.createdAt)}</dd>
             </dl>
-            <label>Public key (install this as the child trust anchor for manual transfers)
+            <label>{t("Public key (install this as the child trust anchor for manual transfers)")}
               <textarea className="key-text" readOnly rows={4} value={identity.publicKeyBase64} />
             </label>
             <div className="row-actions">
-              <button className="secondary" onClick={() => void copyPublicKey()}>Copy public key</button>
-              <button className="secondary" onClick={downloadPublicKey}>Download public key</button>
+              <button className="secondary" onClick={() => void copyPublicKey()}>{t("Copy public key")}</button>
+              <button className="secondary" onClick={downloadPublicKey}>{t("Download public key")}</button>
               <button className="danger-button" disabled={rotationBusy}
                 onClick={() => void rotateSigningKey()}>
-                {rotationBusy ? "Rotating..." : "Rotate signing key"}
+                {rotationBusy ? t("Rotating...") : t("Rotate signing key")}
               </button>
             </div>
           </>
-        ) : <p className="hint">No key exists in this browser yet. Create one before signing or editing packs.</p>}
+        ) : <p className="hint">{t("No key exists in this browser yet. Create one before signing or editing packs.")}</p>}
       </section>
 
       <section className="card">
         <div className="page-title">
           <div>
-            <h2>Quiz key rotation history</h2>
-            <p className="muted">Every new key is authorized by an ECDSA transition signed with the currently trusted key. Paired devices apply transitions before downloading a quiz pack.</p>
+            <h2>{t("Quiz key rotation history")}</h2>
+            <p className="muted">{t("Every new key is authorized by an ECDSA transition signed with the currently trusted key. Paired devices apply transitions before downloading a quiz pack.")}</p>
           </div>
           <span className={`badge ${transitions.some((item) => !item.revoked_at) ? "ok" : "warn"}`}>
-            {transitions.filter((item) => !item.revoked_at).length} trusted transition{transitions.filter((item) => !item.revoked_at).length === 1 ? "" : "s"}
+            {t(transitions.filter((item) => !item.revoked_at).length === 1
+              ? "{count} trusted transition" : "{count} trusted transitions",
+              { count: transitions.filter((item) => !item.revoked_at).length })}
           </span>
         </div>
         <dl className="key-details">
-          <dt>Browser signing key</dt><dd className="mono">{identity?.keyId ?? "No browser key"}</dd>
-          <dt>Active hosted pack key</dt>
-          <dd className="mono">{packs.find((pack) => pack.active)?.key_id ?? "No active pack"}</dd>
+          <dt>{t("Browser signing key")}</dt><dd className="mono">{identity?.keyId ?? t("No browser key")}</dd>
+          <dt>{t("Active hosted pack key")}</dt>
+          <dd className="mono">{packs.find((pack) => pack.active)?.key_id ?? t("No active pack")}</dd>
         </dl>
-        {transitions.length === 0 ? <p className="empty">No key transitions have been published.</p> : (
+        {transitions.length === 0 ? <p className="empty">{t("No key transitions have been published.")}</p> : (
           <div className="table-wrap"><table>
-            <thead><tr><th>Created</th><th>Old key</th><th>New key</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>{t("Created")}</th><th>{t("Old key")}</th><th>{t("New key")}</th><th>{t("Status")}</th><th /></tr></thead>
             <tbody>{transitions.map((transition) => (
               <tr key={transition.id}>
-                <td>{new Date(transition.created_at).toLocaleString()}</td>
+                <td>{formatDate(transition.created_at)}</td>
                 <td className="mono">{transition.old_key_id.slice(0, 16)}...</td>
                 <td className="mono">{transition.new_key_id.slice(0, 16)}...</td>
                 <td><span className={`badge ${transition.revoked_at ? "danger" : "ok"}`}>
-                  {transition.revoked_at ? "Revoked" : "Trusted"}
+                  {t(transition.revoked_at ? "Revoked" : "Trusted")}
                 </span></td>
                 <td><div className="row-actions compact-actions">
-                  <button className="link-button" onClick={() => downloadTransition(transition)}>Transition</button>
+                  <button className="link-button" onClick={() => downloadTransition(transition)}>{t("Transition")}</button>
                   <button className="link-button" disabled={rotationBusy || Boolean(transition.revoked_at)}
-                    onClick={() => void revokeTransition(transition)}>Revoke</button>
+                    onClick={() => void revokeTransition(transition)}>{t("Revoke")}</button>
                 </div></td>
               </tr>
             ))}</tbody>
@@ -519,74 +536,74 @@ export function QuizPacksPage() {
       <section className="card upstream-card">
         <div className="page-title">
           <div>
-            <h2>Trusted upstream</h2>
-            <p className="muted">Fetch a signed quiz envelope, or a delta bundle containing the complete target envelope plus a signed delta, from one public HTTPS endpoint on a fixed interval. The server verifies every signature and version before activating anything.</p>
+            <h2>{t("Trusted upstream")}</h2>
+            <p className="muted">{t("Fetch a signed quiz envelope, or a delta bundle containing the complete target envelope plus a signed delta, from one public HTTPS endpoint on a fixed interval. The server verifies every signature and version before activating anything.")}</p>
           </div>
           <span className={`badge ${upstreamStatusClass(upstream?.last_status ?? "never")}`}>
-            {upstream?.last_status ?? "not configured"}
+            {t(upstream?.last_status ?? "not configured")}
           </span>
         </div>
-        <p className="hint">A delta bundle is applied only when <span className="mono">base_version</span> equals the active hosted version; otherwise the server safely falls back to the complete target envelope. Standalone deltas without a recoverable full target are rejected. A bad signature, equal version or version regression leaves the active pack unchanged.</p>
+        <p className="hint">{t("A delta bundle is applied only when base_version equals the active hosted version; otherwise the server safely falls back to the complete target envelope. Standalone deltas without a recoverable full target are rejected. A bad signature, equal version or version regression leaves the active pack unchanged.")}</p>
         <div className="form-grid">
-          <label>Display title
+          <label>{t("Display title")}
             <input value={upstreamTitle} maxLength={120} disabled={upstreamBusy}
               onChange={(event) => setUpstreamTitle(event.target.value)} />
           </label>
-          <label>Sync interval (15 to 1440 minutes)
+          <label>{t("Sync interval (15 to 1440 minutes)")}
             <input type="number" min={15} max={1440} value={upstreamInterval} disabled={upstreamBusy}
               onChange={(event) => setUpstreamInterval(Number(event.target.value))} />
           </label>
-          <label className="wide">Public HTTPS endpoint
+          <label className="wide">{t("Public HTTPS endpoint")}
             <input value={upstreamUrl} maxLength={2048} disabled={upstreamBusy}
-              placeholder="Public HTTPS URL serving the signed envelope"
+              placeholder={t("Public HTTPS URL serving the signed envelope")}
               onChange={(event) => setUpstreamUrl(event.target.value)} />
           </label>
-          <label className="wide">Trusted quiz signing public key
+          <label className="wide">{t("Trusted quiz signing public key")}
             <textarea rows={3} value={upstreamPublicKey} disabled={upstreamBusy}
-              placeholder="Base64-encoded P-256 public key"
+              placeholder={t("Base64-encoded P-256 public key")}
               onChange={(event) => setUpstreamPublicKey(event.target.value)} />
           </label>
           <label className="toggle">
             <input type="checkbox" checked={upstreamEnabled} disabled={upstreamBusy}
               onChange={(event) => setUpstreamEnabled(event.target.checked)} />
-            Scheduled checks enabled
+            {t("Scheduled checks enabled")}
           </label>
         </div>
         <div className="row-actions">
           <button className="primary" disabled={upstreamBusy} onClick={() => void saveUpstream()}>
-            {upstreamBusy ? "Working..." : upstream ? "Save changes" : "Save upstream"}
+            {upstreamBusy ? t("Working...") : upstream ? t("Save changes") : t("Save upstream")}
           </button>
           <button className="secondary" disabled={upstreamBusy || !upstream}
-            onClick={() => void syncUpstreamNow()}>Sync now</button>
+            onClick={() => void syncUpstreamNow()}>{t("Sync now")}</button>
           <button className="danger-button" disabled={upstreamBusy || !upstream}
-            onClick={() => void deleteUpstream()}>Delete configuration</button>
+            onClick={() => void deleteUpstream()}>{t("Delete configuration")}</button>
           {identity && (
             <button className="link-button" disabled={upstreamBusy}
               onClick={() => setUpstreamPublicKey(identity.publicKeyBase64)}>
-              Use browser signing key
+              {t("Use browser signing key")}
             </button>
           )}
         </div>
         {upstream && (
           <dl className="key-details upstream-details">
-            <dt>Trusted key id</dt><dd className="mono">{upstream.key_id}</dd>
-            <dt>Scheduled checks</dt><dd>{upstream.enabled ? "Enabled" : "Paused"}</dd>
-            <dt>Last checked</dt>
-            <dd>{upstream.last_checked_at ? new Date(upstream.last_checked_at).toLocaleString() : "Never"}</dd>
-            <dt>Last successful check</dt>
-            <dd>{upstream.last_success_at ? new Date(upstream.last_success_at).toLocaleString() : "Never"}</dd>
-            <dt>Last accepted version</dt><dd>{upstream.last_version ?? "None"}</dd>
-            <dt>Last status</dt><dd><span className={`badge ${upstreamStatusClass(upstream.last_status)}`}>{upstream.last_status}</span></dd>
+            <dt>{t("Trusted key id")}</dt><dd className="mono">{upstream.key_id}</dd>
+            <dt>{t("Scheduled checks")}</dt><dd>{t(upstream.enabled ? "Enabled" : "Paused")}</dd>
+            <dt>{t("Last checked")}</dt>
+            <dd>{upstream.last_checked_at ? formatDate(upstream.last_checked_at) : t("Never")}</dd>
+            <dt>{t("Last successful check")}</dt>
+            <dd>{upstream.last_success_at ? formatDate(upstream.last_success_at) : t("Never")}</dd>
+            <dt>{t("Last accepted version")}</dt><dd>{upstream.last_version ?? t("None")}</dd>
+            <dt>{t("Last status")}</dt><dd><span className={`badge ${upstreamStatusClass(upstream.last_status)}`}>{t(upstream.last_status)}</span></dd>
           </dl>
         )}
-        {upstream?.last_error && <p className="error" role="alert">Last upstream error: {upstream.last_error}</p>}
+        {upstream?.last_error && <p className="error" role="alert">{t("Last upstream error: {error}", { error: upstream.last_error })}</p>}
         {upstreamEvents.length > 0 && (
           <div className="table-wrap upstream-events">
             <table>
-              <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+              <thead><tr><th>{t("Time")}</th><th>{t("Event")}</th><th>{t("Detail")}</th></tr></thead>
               <tbody>{upstreamEvents.map((event) => (
                 <tr key={event.id}>
-                  <td>{new Date(event.created_at).toLocaleString()}</td>
+                  <td>{formatDate(event.created_at)}</td>
                   <td className="mono">{event.event}</td>
                   <td className="mono">{event.detail || "-"}</td>
                 </tr>
@@ -599,16 +616,17 @@ export function QuizPacksPage() {
       <section className="card">
         <div className="pack-heading">
           <div>
-            <h2>Pack editor</h2>
-            <p className="muted">Publishing requires a version newer than the currently active pack.</p>
+            <h2>{t("Pack editor")}</h2>
+            <p className="muted">{t("Publishing requires a version newer than the currently active pack.")}</p>
           </div>
-          <span className="badge ok">{questions.length} question{questions.length === 1 ? "" : "s"}</span>
+          <span className="badge ok">{t(questions.length === 1 ? "{count} question" : "{count} questions",
+            { count: questions.length })}</span>
         </div>
         <div className="form-grid pack-fields">
-          <label>Title
+          <label>{t("Title")}
             <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} />
           </label>
-          <label>Version
+          <label>{t("Version")}
             <input type="number" min={1} max={9_999_999_999} value={version}
               onChange={(event) => setVersion(Number(event.target.value))} />
           </label>
@@ -622,30 +640,34 @@ export function QuizPacksPage() {
         </div>
 
         <div className="row-actions add-question-actions">
-          <span className="hint">Add question:</span>
+          <span className="hint">{t("Add question:")}</span>
           {Object.entries(TYPE_LABELS).map(([type, label]) =>
             <button key={type} className="secondary" disabled={busy}
-              onClick={() => addQuestion(type as QuizQuestionType)}>{label}</button>)}
+              onClick={() => addQuestion(type as QuizQuestionType)}>{t(label)}</button>)}
         </div>
 
         <div className="row-actions publish-actions">
-          <span className="hint">Publish as:</span>
+          <span className="hint">{t("Publish as:")}</span>
           <label className="toggle">
             <input type="radio" name="publish-mode" checked={publishMode === "full"}
               disabled={busy} onChange={() => setPublishMode("full")} />
-            Complete pack
+            {t("Complete pack")}
           </label>
           <label className="toggle">
             <input type="radio" name="publish-mode" checked={publishMode === "delta"}
               disabled={busy || !basePack} onChange={() => setPublishMode("delta")} />
-            {basePack ? `Delta from version ${basePack.version}` : "Delta (load active pack first)"}
+            {basePack ? t("Delta from version {version}", { version: basePack.version }) : t("Delta (load active pack first)")}
           </label>
         </div>
         {publishMode === "delta" && basePack && (
           <p className={deltaPreview.error ? "error" : "hint"} role={deltaPreview.error ? "alert" : undefined}>
             {deltaPreview.error
-              ? deltaPreview.error
-              : `Delta preview: ${deltaPreview.plan?.operations.length ?? 0} operations, ${Math.ceil((deltaPreview.plan?.byteLength ?? 0) / 1024)} KiB signed payload. A complete version ${version} pack will also be stored as the recovery baseline.`}
+              ? t(deltaPreview.error)
+              : t("Delta preview: {operations} operations, {size} KiB signed payload. A complete version {version} pack will also be stored as the recovery baseline.", {
+                operations: deltaPreview.plan?.operations.length ?? 0,
+                size: Math.ceil((deltaPreview.plan?.byteLength ?? 0) / 1024),
+                version
+              })}
           </p>
         )}
         <div className="row-actions publish-actions">
@@ -653,42 +675,46 @@ export function QuizPacksPage() {
             || (publishMode === "delta" && (!basePack || !deltaPreview.plan
               || basePack.keyId !== identity.keyId))}
             onClick={() => void (publishMode === "delta" ? uploadDelta() : uploadEnvelope())}>
-            {busy ? "Signing..." : publishMode === "delta"
-              ? "Sign delta, upload and activate" : "Sign full pack, upload and activate"}
+            {busy ? t("Signing...") : publishMode === "delta"
+              ? t("Sign delta, upload and activate") : t("Sign full pack, upload and activate")}
           </button>
           <button className="secondary" disabled={busy || !identity} onClick={() => void downloadEnvelope()}>
-            Download signed envelope
+            {t("Download signed envelope")}
           </button>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(event) => void loadFile(event)} />
           <button className="secondary" disabled={busy || !identity} onClick={() => fileRef.current?.click()}>
-            Import signed pack for editing
+            {t("Import signed pack for editing")}
           </button>
         </div>
         {signed && (
           <p className="hint">
-            Last signed payload: version {signed.version}, {signed.questionCount} questions,
-            envelope {Math.ceil(signed.envelope.length / 1024)} KiB, key {signed.keyId.slice(0, 16)}...
+            {t("Last signed payload: version {version}, {count} questions, envelope {size} KiB, key {key}...", {
+              version: signed.version,
+              count: signed.questionCount,
+              size: Math.ceil(signed.envelope.length / 1024),
+              key: signed.keyId.slice(0, 16)
+            })}
           </p>
         )}
       </section>
 
       <section className="card">
-        <h2>Hosted packs</h2>
-        <p className="muted">The active pack is downloaded automatically by paired child devices on their next sync.</p>
-        {packs.length === 0 ? <p className="empty">No signed packs have been uploaded.</p> : (
+        <h2>{t("Hosted packs")}</h2>
+        <p className="muted">{t("The active pack is downloaded automatically by paired child devices on their next sync.")}</p>
+        {packs.length === 0 ? <p className="empty">{t("No signed packs have been uploaded.")}</p> : (
           <div className="table-wrap"><table>
-            <thead><tr><th>Version</th><th>Title</th><th>Questions</th><th>Delivery</th><th>Published</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>{t("Version")}</th><th>{t("Title")}</th><th>{t("Questions")}</th><th>{t("Delivery")}</th><th>{t("Published")}</th><th>{t("Status")}</th><th /></tr></thead>
             <tbody>{packs.map((pack) => (
               <tr key={pack.id}>
                 <td>{pack.version}</td>
                 <td>{pack.title}</td>
                 <td>{pack.question_count}</td>
-                <td>{pack.has_delta ? `Delta from v${pack.base_version}` : "Complete"}</td>
-                <td>{new Date(pack.created_at).toLocaleString()}</td>
-                <td><span className={`badge ${pack.active ? "ok" : "warn"}`}>{pack.active ? "Active" : "Inactive"}</span></td>
+                <td>{pack.has_delta ? t("Delta from v{version}", { version: pack.base_version ?? "" }) : t("Complete")}</td>
+                <td>{formatDate(pack.created_at)}</td>
+                <td><span className={`badge ${pack.active ? "ok" : "warn"}`}>{t(pack.active ? "Active" : "Inactive")}</span></td>
                 <td><div className="row-actions compact-actions">
-                  <button className="link-button" disabled={busy} onClick={() => void loadServerPack(pack)}>Load</button>
-                  <button className="link-button" disabled={busy} onClick={() => void downloadServerEnvelope(pack)}>Envelope</button>
+                  <button className="link-button" disabled={busy} onClick={() => void loadServerPack(pack)}>{t("Load")}</button>
+                  <button className="link-button" disabled={busy} onClick={() => void downloadServerEnvelope(pack)}>{t("Envelope")}</button>
                 </div></td>
               </tr>
             ))}</tbody>
@@ -707,6 +733,7 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
   onRemove: (index: number) => void;
   onImage: (index: number, file: File | null) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const update = (patch: Partial<EditableQuestion>) => onChange(index, patch);
 
   function updateOption(optionIndex: number, value: string) {
@@ -732,42 +759,42 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
   return (
     <article className="question-card">
       <div className="question-heading">
-        <strong>Question {index + 1}</strong>
+        <strong>{t("Question {number}", { number: index + 1 })}</strong>
         <div className="row-actions compact-actions">
           <select value={question.type} disabled={busy}
             onChange={(event) => onChange(index, changeQuestionType(question, event.target.value as QuizQuestionType))}>
-            {Object.entries(TYPE_LABELS).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+            {Object.entries(TYPE_LABELS).map(([type, label]) => <option key={type} value={type}>{t(label)}</option>)}
           </select>
-          <button className="danger-button" disabled={busy} onClick={() => onRemove(index)}>Remove</button>
+          <button className="danger-button" disabled={busy} onClick={() => onRemove(index)}>{t("Remove")}</button>
         </div>
       </div>
       <div className="form-grid">
-        <label>Question id
+        <label>{t("Question id")}
           <input value={question.id} maxLength={128} onChange={(event) => update({ id: event.target.value })} />
         </label>
-        <label>Prompt
+        <label>{t("Prompt")}
           <input value={question.prompt} maxLength={2_000} onChange={(event) => update({ prompt: event.target.value })} />
         </label>
-        <label>Subject
-          <input placeholder="mathematics" value={question.subject} maxLength={64}
+        <label>{t("Subject")}
+          <input placeholder={t("mathematics")} value={question.subject} maxLength={64}
             onChange={(event) => update({ subject: event.target.value })} />
         </label>
-        <label>Grade (0 = unspecified)
+        <label>{t("Grade (0 = unspecified)")}
           <input type="number" min={0} max={12} value={question.grade}
             onChange={(event) => update({ grade: Number(event.target.value) })} />
         </label>
-        <label>Difficulty
+        <label>{t("Difficulty")}
           <select value={question.difficulty} onChange={(event) => update({ difficulty: event.target.value })}>
-            <option value="">Unspecified</option><option value="easy">Easy</option>
-            <option value="medium">Medium</option><option value="hard">Hard</option>
+            <option value="">{t("Unspecified")}</option><option value="easy">{t("Easy")}</option>
+            <option value="medium">{t("Medium")}</option><option value="hard">{t("Hard")}</option>
           </select>
         </label>
-        <label>Language
-          <input placeholder="en or zh-CN" value={question.language} maxLength={32}
+        <label>{t("Language")}
+          <input placeholder={t("en or zh-CN")} value={question.language} maxLength={32}
             onChange={(event) => update({ language: event.target.value })} />
         </label>
-        <label className="wide">Tags (comma separated)
-          <input placeholder="arithmetic, fractions" value={question.tags}
+        <label className="wide">{t("Tags (comma separated)")}
+          <input placeholder={t("arithmetic, fractions")} value={question.tags}
             onChange={(event) => update({ tags: event.target.value })} />
         </label>
       </div>
@@ -775,8 +802,8 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
       {(question.type === "single_choice" || question.type === "multiple_choice") && (
         <div className="answer-editor">
           <div className="answer-editor-title">
-            <strong>Options</strong>
-            <span className="hint">{question.type === "single_choice" ? "Mark one correct answer." : "Mark two or more, but not all, correct."}</span>
+            <strong>{t("Options")}</strong>
+            <span className="hint">{t(question.type === "single_choice" ? "Mark one correct answer." : "Mark two or more, but not all, correct.")}</span>
           </div>
           {question.options.map((option, optionIndex) => (
             <div className="option-row" key={optionIndex}>
@@ -786,28 +813,28 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
                   ? question.answerIndex === optionIndex : question.answerIndices.includes(optionIndex)}
                 onChange={() => question.type === "single_choice"
                   ? update({ answerIndex: optionIndex }) : toggleMultiple(optionIndex)} />
-              <input value={option} maxLength={300} placeholder={`Option ${optionIndex + 1}`}
+              <input value={option} maxLength={300} placeholder={t("Option {number}", { number: optionIndex + 1 })}
                 onChange={(event) => updateOption(optionIndex, event.target.value)} />
               <button className="link-button" disabled={question.options.length <= 2 || busy}
-                onClick={() => removeOption(optionIndex)}>Remove</button>
+                onClick={() => removeOption(optionIndex)}>{t("Remove")}</button>
             </div>
           ))}
           <button className="secondary" disabled={question.options.length >= 8 || busy}
-            onClick={() => update({ options: [...question.options, ""] })}>Add option</button>
+            onClick={() => update({ options: [...question.options, ""] })}>{t("Add option")}</button>
         </div>
       )}
 
       {question.type === "true_false" && (
-        <label className="answer-select">Correct answer
+        <label className="answer-select">{t("Correct answer")}
           <select value={question.booleanAnswer ? "true" : "false"}
             onChange={(event) => update({ booleanAnswer: event.target.value === "true" })}>
-            <option value="true">True</option><option value="false">False</option>
+            <option value="true">{t("True")}</option><option value="false">{t("False")}</option>
           </select>
         </label>
       )}
 
       {question.type === "short_answer" && (
-        <label>Accepted answers (one per line)
+        <label>{t("Accepted answers (one per line)")}
           <textarea rows={3} value={question.acceptedAnswers}
             onChange={(event) => update({ acceptedAnswers: event.target.value })} />
         </label>
@@ -815,16 +842,16 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
 
       <div className="image-editor">
         <div>
-          <strong>Question image</strong>
-          <p className="hint">Optional JPEG or PNG, up to 512 KiB. Total pack images are limited to 5 MiB.</p>
+          <strong>{t("Question image")}</strong>
+          <p className="hint">{t("Optional JPEG or PNG, up to 512 KiB. Total pack images are limited to 5 MiB.")}</p>
         </div>
         {question.imageBase64 ? (
           <div className="question-image-preview">
-            <img src={`data:${question.imageMime};base64,${question.imageBase64}`} alt={question.imageName || "Question"} />
+            <img src={`data:${question.imageMime};base64,${question.imageBase64}`} alt={question.imageName || t("Question")} />
             <div className="row-actions">
-              <span className="mono">{question.imageName || "embedded image"}</span>
+              <span className="mono">{question.imageName || t("embedded image")}</span>
               <button className="danger-button" disabled={busy}
-                onClick={() => update({ imageBase64: "", imageMime: "", imageName: "" })}>Remove image</button>
+                onClick={() => update({ imageBase64: "", imageMime: "", imageName: "" })}>{t("Remove image")}</button>
             </div>
           </div>
         ) : (
@@ -834,10 +861,6 @@ function QuestionEditor({ question, index, busy, onChange, onRemove, onImage }: 
       </div>
     </article>
   );
-}
-
-function messageOf(problem: unknown): string {
-  return problem instanceof Error ? problem.message : "The operation failed";
 }
 
 function upstreamStatusClass(status: string): string {

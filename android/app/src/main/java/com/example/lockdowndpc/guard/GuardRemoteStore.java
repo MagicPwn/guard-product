@@ -87,7 +87,16 @@ public final class GuardRemoteStore {
         }
         boolean loopback = host.equals("localhost") || host.equals("10.0.2.2")
                 || host.equals("127.0.0.1");
-        if (!scheme.equalsIgnoreCase("https") && !(scheme.equalsIgnoreCase("http") && loopback)) {
+        String configuredInsecureServer = com.example.lockdowndpc.BuildConfig.GUARD_SERVER_URL == null
+                ? "" : com.example.lockdowndpc.BuildConfig.GUARD_SERVER_URL.trim();
+        while (configuredInsecureServer.endsWith("/")) {
+            configuredInsecureServer = configuredInsecureServer.substring(0, configuredInsecureServer.length() - 1);
+        }
+        boolean pilotEndpoint = com.example.lockdowndpc.BuildConfig.ALLOW_INSECURE_LOCAL_SERVER
+                && !configuredInsecureServer.isEmpty()
+                && input.equalsIgnoreCase(configuredInsecureServer);
+        if (!scheme.equalsIgnoreCase("https")
+                && !(scheme.equalsIgnoreCase("http") && (loopback || pilotEndpoint))) {
             throw new IllegalArgumentException("Use HTTPS; HTTP is allowed only for local development");
         }
         if (input.length() > 500) throw new IllegalArgumentException("Server URL is too long");

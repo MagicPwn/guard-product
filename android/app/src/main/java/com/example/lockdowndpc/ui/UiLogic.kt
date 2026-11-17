@@ -62,7 +62,7 @@ internal fun bidiIsolatedLines(text: String): String =
     text.lineSequence().joinToString("\n") { it.bidiIsolated() }
 
 /** The display languages Device Guard ships a complete translation for. */
-internal enum class LanguageChoice { SYSTEM, ENGLISH, HEBREW }
+internal enum class LanguageChoice { SYSTEM, CHINESE, ENGLISH, HEBREW }
 
 /**
  * Resolves the persisted display language from a comma-separated BCP-47 list, the
@@ -79,6 +79,7 @@ internal fun languageChoiceOf(languageTags: String): LanguageChoice {
         return LanguageChoice.SYSTEM
     }
     return when (primary.substringBefore('-').lowercase(Locale.ROOT)) {
+        "zh" -> LanguageChoice.CHINESE
         "en" -> LanguageChoice.ENGLISH
         "he", "iw" -> LanguageChoice.HEBREW
         else -> LanguageChoice.SYSTEM
@@ -88,6 +89,7 @@ internal fun languageChoiceOf(languageTags: String): LanguageChoice {
 /** The BCP-47 tag to persist for [choice], or `null` to follow the system. */
 internal fun languageTagOf(choice: LanguageChoice): String? = when (choice) {
     LanguageChoice.SYSTEM -> null
+    LanguageChoice.CHINESE -> "zh-CN"
     LanguageChoice.ENGLISH -> "en"
     LanguageChoice.HEBREW -> "he"
 }

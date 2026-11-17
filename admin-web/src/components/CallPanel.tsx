@@ -8,6 +8,7 @@ import {
   type RemoteTrack
 } from "livekit-client";
 import type { CallRequest, LiveKitCredentials } from "../api";
+import { errorText, useI18n } from "../i18n";
 
 interface Props {
   credentials: LiveKitCredentials;
@@ -16,8 +17,9 @@ interface Props {
 }
 
 export function CallPanel({ credentials, kind, onEnd }: Props) {
+  const { t } = useI18n();
   const stage = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState("Connecting?");
+  const [status, setStatus] = useState("Connecting...");
   const [error, setError] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
 
@@ -27,7 +29,7 @@ export function CallPanel({ credentials, kind, onEnd }: Props) {
     try {
       await onEnd();
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Unable to end and revoke this call");
+      setError(errorText(problem, "Unable to end and revoke this call", t));
     } finally {
       setEnding(false);
     }
@@ -65,10 +67,10 @@ export function CallPanel({ credentials, kind, onEnd }: Props) {
             await room.localParticipant.publishTrack(track);
           }
         }
-        setStatus("Connected ? waiting for the other side");
+        setStatus("Connected - waiting for the other side");
       } catch (problem) {
         if (!cancelled) {
-          setError(problem instanceof Error ? problem.message : "Unable to join the call");
+          setError(errorText(problem, "Unable to join the call", t));
           setStatus("Not connected");
         }
       }
@@ -87,16 +89,16 @@ export function CallPanel({ credentials, kind, onEnd }: Props) {
     <section className="card call-card">
       <div className="page-title">
         <div>
-          <h2>{kind === "screen" ? "Screen share" : kind === "video" ? "Video call" : "Voice call"}</h2>
-          <p className="muted">{status}</p>
+          <h2>{t(kind === "screen" ? "Screen share" : kind === "video" ? "Video call" : "Voice call")}</h2>
+          <p className="muted">{t(status)}</p>
         </div>
         <button className="secondary" onClick={() => void end()} disabled={ending}>
-          {ending ? "Ending..." : "End"}
+          {ending ? t("Ending...") : t("End")}
         </button>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="call-stage" ref={stage} />
-      <p className="hint">The child device controls its camera, microphone, and screen sharing. Nothing is recorded by Guard.</p>
+      <p className="hint">{t("The child device controls its camera, microphone, and screen sharing. Nothing is recorded by Guard.")}</p>
     </section>
   );
 }

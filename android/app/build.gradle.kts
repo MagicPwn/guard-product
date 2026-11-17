@@ -13,6 +13,9 @@ val guardPolicyKeyId = providers.gradleProperty("guardPolicyKeyId")
     .orElse(providers.environmentVariable("GUARD_POLICY_KEY_ID")).getOrElse("")
 val guardPolicyPublicKey = providers.gradleProperty("guardPolicyPublicKey")
     .orElse(providers.environmentVariable("GUARD_POLICY_PUBLIC_KEY")).getOrElse("")
+val guardAllowInsecureLocalServer = providers.gradleProperty("guardAllowInsecureLocalServer")
+    .orElse(providers.environmentVariable("GUARD_ALLOW_INSECURE_LOCAL_SERVER"))
+    .getOrElse("false").toBoolean()
 
 android {
     namespace = "com.example.lockdowndpc"
@@ -27,8 +30,8 @@ android {
         // provisioned pilot device in place. Only the version identity moves.
         // Every published pilot increments this identity so Android and the
         // signed update channel can perform an in-place, replay-safe update.
-        versionCode = 14
-        versionName = "0.5.4"
+        versionCode = 15
+        versionName = "0.5.5"
         // Update channels are an explicit build choice. Ordinary builds never
         // consume ambient properties or environment variables.
         buildConfigField("String", "UPDATE_MANIFEST_URL", "".asBuildConfigString())
@@ -36,6 +39,16 @@ android {
         buildConfigField("String", "GUARD_SERVER_URL", guardServerUrl.asBuildConfigString())
         buildConfigField("String", "GUARD_POLICY_KEY_ID", guardPolicyKeyId.asBuildConfigString())
         buildConfigField("String", "GUARD_POLICY_PUBLIC_KEY", guardPolicyPublicKey.asBuildConfigString())
+        buildConfigField(
+            "boolean",
+            "ALLOW_INSECURE_LOCAL_SERVER",
+            guardAllowInsecureLocalServer.toString()
+        )
+        manifestPlaceholders["networkSecurityConfig"] = if (guardAllowInsecureLocalServer) {
+            "@xml/network_security_config_pilot"
+        } else {
+            "@xml/network_security_config"
+        }
     }
 
     buildTypes {

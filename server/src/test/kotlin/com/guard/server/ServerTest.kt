@@ -657,7 +657,7 @@ class ServerTest {
 
         val malformed = postJson(client, "/api/v1/auth/login", "{\"email\":",
             expected = HttpStatusCode.BadRequest)
-        assertEquals("Invalid request",
+        assertEquals("请求无效",
             json.parseToJsonElement(malformed).jsonObject.getValue("error").jsonPrimitive.content)
 
         postJson(client, "/api/v1/auth/login",
@@ -1275,13 +1275,13 @@ class ServerTest {
         val callId = json.parseToJsonElement(created).jsonObject.getValue("id").jsonPrimitive.content
         val pendingEnd = postJson(client, "/api/v1/call-requests/$callId/end", "{}",
             parentToken, HttpStatusCode.Conflict)
-        assertTrue(pendingEnd.contains("accepted"))
+        assertTrue(pendingEnd.contains("已接受"))
         postJson(client, "/api/v1/device/call-requests/$callId/respond",
             """{"accept":true}""", deviceToken)
 
         val failed = postJson(client, "/api/v1/call-requests/$callId/end", "{}",
             parentToken, HttpStatusCode.BadGateway)
-        assertTrue(failed.contains("retry"))
+        assertTrue(failed.contains("重试"))
         val list = client.get("/api/v1/devices/$deviceUuid/call-requests") {
             header(HttpHeaders.Authorization, "Bearer $parentToken")
         }.bodyAsText()

@@ -125,7 +125,10 @@ class UiLogicTest {
     }
 
     @Test
-    fun languageChoice_readsEnglishAndHebrewTags() {
+    fun languageChoice_readsChineseEnglishAndHebrewTags() {
+        assertEquals(LanguageChoice.CHINESE, languageChoiceOf("zh"))
+        assertEquals(LanguageChoice.CHINESE, languageChoiceOf("zh-CN"))
+        assertEquals(LanguageChoice.CHINESE, languageChoiceOf("zh-Hans-CN"))
         assertEquals(LanguageChoice.ENGLISH, languageChoiceOf("en"))
         assertEquals(LanguageChoice.ENGLISH, languageChoiceOf("en-US"))
         assertEquals(LanguageChoice.HEBREW, languageChoiceOf("he"))
@@ -161,6 +164,7 @@ class UiLogicTest {
     @Test
     fun languageTag_followsTheSystemWithoutATag() {
         assertNull(languageTagOf(LanguageChoice.SYSTEM))
+        assertEquals("zh-CN", languageTagOf(LanguageChoice.CHINESE))
         assertEquals("en", languageTagOf(LanguageChoice.ENGLISH))
         assertEquals("he", languageTagOf(LanguageChoice.HEBREW))
     }

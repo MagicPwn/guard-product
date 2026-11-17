@@ -139,15 +139,15 @@ fun Application.guardModule(services: Services, startBackgroundJobs: Boolean = f
     }
     install(StatusPages) {
         exception<ApiException> { call, cause ->
-            call.respond(cause.status, ErrorResponse(cause.message))
+            call.respond(cause.status, ErrorResponse(ServerMessages.localize(cause.message)))
         }
         exception<BadRequestException> { call, cause ->
             call.application.log.warn("Rejected malformed request: ${cause.javaClass.simpleName}")
-            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Invalid request"))
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(ServerMessages.localize("Invalid request")))
         }
         exception<Throwable> { call, cause ->
             call.application.log.error("Unhandled request failure", cause)
-            call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error"))
+            call.respond(HttpStatusCode.InternalServerError, ErrorResponse(ServerMessages.localize("Internal server error")))
         }
     }
     if (startBackgroundJobs) {

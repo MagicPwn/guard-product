@@ -8,6 +8,7 @@
     Both resolve to the same Locale, whose getLanguage() is the legacy code "iw".
 -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="zh-CN" />
     <locale android:name="en" />
     <locale android:name="he" />
 </locale-config>

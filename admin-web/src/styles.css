@@ -27,6 +27,10 @@ pre { overflow: auto; background: #eef2ee; padding: 1rem; border-radius: 10px; }
 }
 .app-header a { color: #f1f8f4; }
 .app-header nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.language-select {
+  width: auto; min-width: 5.5rem; padding: 0.35rem 0.5rem;
+  background: #f7fbf8; border-color: #b9d1c4; color: #173f35; font-weight: 600;
+}
 .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 700; font-size: 1.2rem; letter-spacing: 0.02em; }
 .app-main { max-width: 1100px; margin: 0 auto; padding: 1.5rem clamp(1rem, 4vw, 2.5rem) 4rem; }
 .page-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }

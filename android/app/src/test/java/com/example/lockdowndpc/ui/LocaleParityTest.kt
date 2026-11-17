@@ -176,7 +176,21 @@ class LocaleParityTest {
         // "he" is the BCP-47 tag the platform locale picker parses; res/values-iw is
         // the folder Android resolves it to, because Locale#getLanguage() still
         // reports the legacy code for Hebrew.
-        assertEquals(setOf("en", "he"), declared)
+        assertEquals(setOf("zh-CN", "en", "he"), declared)
+    }
+
+    @Test
+    fun defaultChineseWiringIsPresent() {
+        val application = File(moduleDir(), "src/main/java/com/example/lockdowndpc/GuardApplication.kt").readText()
+        assertTrue(
+            "GuardApplication must apply the shipped Chinese default on first launch",
+            "AppLocales.ensureDefault(this)" in application,
+        )
+        val manifest = File(moduleDir(), "src/main/AndroidManifest.xml").readText()
+        assertTrue(
+            "the manifest must start GuardApplication rather than the platform default Application",
+            "android:name=\".GuardApplication\"" in manifest,
+        )
     }
 
     @Test

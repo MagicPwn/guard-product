@@ -6,10 +6,12 @@ import { DevicesPage } from "./pages/DevicesPage";
 import { DeviceDetailPage } from "./pages/DeviceDetailPage";
 import { QuizPacksPage } from "./pages/QuizPacksPage";
 import { AccountPage } from "./pages/AccountPage";
+import { LanguageSwitcher, useI18n } from "./i18n";
 
 export function App() {
   const [parent, setParent] = useState<Parent | null>(null);
   const [loading, setLoading] = useState(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     api.me()
@@ -19,7 +21,7 @@ export function App() {
   }, []);
 
   if (loading) {
-    return <main className="centered"><p>Checking session?</p></main>;
+    return <main className="centered"><p>{t("Checking session...")}</p></main>;
   }
   if (!parent) {
     return <AuthPage onAuthenticated={(value) => setParent(value.parent)} />;
@@ -33,6 +35,7 @@ export function App() {
 
 function Shell({ parent, onLogout }: { parent: Parent; onLogout: () => void }) {
   const [signingOut, setSigningOut] = useState(false);
+  const { t } = useI18n();
 
   async function signOut() {
     if (signingOut) return;
@@ -53,15 +56,16 @@ function Shell({ parent, onLogout }: { parent: Parent; onLogout: () => void }) {
       <header className="app-header">
         <Link className="brand" to="/">
           <img src="/icon.svg" alt="" width="34" height="34" />
-          <span>Guard</span>
+          <span>{t("Guard")}</span>
         </Link>
         <nav>
-          <Link to="/">Devices</Link>
-          <Link to="/quiz-packs">Quiz packs</Link>
-          <Link to="/account">Account</Link>
+          <Link to="/">{t("Devices")}</Link>
+          <Link to="/quiz-packs">{t("Quiz packs")}</Link>
+          <Link to="/account">{t("Account")}</Link>
           <span className="muted">{parent.email}</span>
+          <LanguageSwitcher />
           <button className="link-button" onClick={() => void signOut()} disabled={signingOut}>
-            {signingOut ? "Signing out..." : "Sign out"}
+            {signingOut ? t("Signing out...") : t("Sign out")}
           </button>
         </nav>
       </header>
