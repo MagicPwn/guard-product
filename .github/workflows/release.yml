@@ -1,4 +1,4 @@
-name: Guard Release
+name: Guard 发布
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.5.4"
+        description: "发布标签，例如 v0.5.5"
         required: true
-        default: "v0.5.4"
+        default: "v0.5.5"
         type: string
 
 permissions:
@@ -196,12 +196,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${RELEASE_TAG#v}"
+          ANDROID_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)"
+          test -n "$ANDROID_VERSION"
           cp docs/RELEASE_EVIDENCE.zh-CN.md release-assets/
           cat > release-assets/BUILD_INFO.txt <<EOF
           release_tag=${RELEASE_TAG}
           source_commit=${GITHUB_SHA}
           workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          android_version=0.5.4
+          android_version=${ANDROID_VERSION}
           server_version=0.1.0
           admin_web_version=0.1.0
           EOF
@@ -211,26 +213,26 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
-          name: Guard ${{ env.RELEASE_TAG }} pilot candidate
+          name: Guard ${{ env.RELEASE_TAG }} 试点候选版本
           prerelease: true
           fail_on_unmatched_files: true
           files: release-assets/*
           body: |
-            ## Guard ${{ env.RELEASE_TAG }} pilot candidate
+            ## Guard ${{ env.RELEASE_TAG }} 试点候选版本
 
-            Automated build from commit `${{ github.sha }}`.
+            由提交 `${{ github.sha }}` 自动构建。
 
-            ### Assets
+            ### 发布产物
 
-            - Android debug APK and release-candidate APK.
-            - Server distribution, executable jar, and test report.
-            - Parent PWA production bundle.
-            - Functional E2E JUnit report, release evidence, and `SHA256SUMS.txt`.
+            - 儿童端调试 APK 与发布候选 APK。
+            - 服务端发行包、可执行 JAR 与测试报告。
+            - 家长端 PWA 生产构建包。
+            - 功能端到端测试 JUnit 报告、发布验证记录及 `SHA256SUMS.txt`。
 
-            ### Important limitations
+            ### 重要限制
 
-            - The release-candidate APK currently uses the existing pilot signing key, not a production distribution key.
-            - Real Device Owner hardware, OEM background restrictions, camera/microphone hardware, official LiveKit/TURN infrastructure, and production secrets are not validated by this release.
-            - See `RELEASE_EVIDENCE.zh-CN.md` for the exact verification scope.
+            - 发布候选 APK 使用现有试点签名密钥，不是正式分发密钥。
+            - 本次发布不验证真实 Device Owner 硬件、各厂商后台限制、摄像头/麦克风硬件、官方 LiveKit/TURN 基础设施及生产密钥。
+            - 完整验证范围请查看 `RELEASE_EVIDENCE.zh-CN.md`。
 
-            Verification run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            验证运行：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
