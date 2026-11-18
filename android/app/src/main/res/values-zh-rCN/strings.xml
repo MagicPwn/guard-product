@@ -98,8 +98,8 @@
     <string name="update_ready_supporting">每天会自动检查一次，你也可以立即检查。</string>
     <string name="update_disabled_title">未配置远程更新</string>
     <string name="update_disabled_supporting">构建服务版本时必须配置更新网址和验证密钥。</string>
-    <string name="admin_help_allow">Tailscale 和必要系统组件始终保留。新安装的应用会被阻止，直到管理员批准。</string>
-    <string name="admin_help_block">Tailscale 和必要系统组件始终保留。新安装的应用需要管理员批准。</string>
+    <string name="admin_help_allow">管理连接和必要系统组件始终保留。新安装的应用会被阻止，直到管理员批准。</string>
+    <string name="admin_help_block">管理连接和必要系统组件始终保留。新安装的应用需要管理员批准。</string>
     <string name="admin_error_recovery">无法在此设备上创建恢复码。</string>
     <string name="admin_error_allowlist">启用保护前，请选择并保存应用列表。</string>
     <string name="admin_pause_failed">暂停保护未通过验证：%1$s</string>
@@ -299,4 +299,16 @@
     <string name="audit_mode_allow">已选择模式：仅允许选中的应用</string>
     <string name="audit_mode_block">已选择模式：阻止选中的应用</string>
     <string name="audit_apps_saved">应用列表已保存</string>
+    <string name="admin_tab_protection">保护与应用</string>
+    <string name="admin_tab_protection_description">选择阻止方式、应用范围和系统策略。这些设置决定保护开启时哪些应用可用。</string>
+    <string name="admin_tab_time">时间与学习</string>
+    <string name="admin_tab_time_description">设置本地每日额度、允许时段和答题奖励。已配对的家长策略同步后会优先生效。</string>
+    <string name="admin_tab_device">设备与连接</string>
+    <string name="admin_tab_device_description">管理 Kiosk 运行配置、管理连接和受管应用身份。</string>
+    <string name="admin_tab_security">账号与安全</string>
+    <string name="admin_tab_security_description">更改管理员 PIN、更新恢复码，并控制紧急访问或锁定管理屏幕。</string>
+    <string name="admin_tab_records">记录</string>
+    <string name="admin_tab_records_description">查看设备健康状态和管理审计日志。</string>
+    <string name="admin_tab_system">系统</string>
+    <string name="admin_tab_system_description">检查签名更新并切换应用语言。</string>
 </resources>

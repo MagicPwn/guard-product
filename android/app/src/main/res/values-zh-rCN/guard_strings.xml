@@ -193,4 +193,11 @@
     <string name="guard_usage_reminder_intro">这是此设备屏幕时间计划的友好提醒。家长策略和应用限制仍然有效。</string>
     <string name="guard_usage_reminder_close">返回</string>
     <string name="guard_usage_reminder_app_fallback">此应用</string>
+    <string name="guard_section_limits">时间限制与应用访问</string>
+    <string name="guard_section_limits_hint">在此为一个应用设置每日额度、允许时段和启动器行为。点击“保存并应用”会同时写入限额、启动器和答题开关。</string>
+    <string name="guard_section_quiz">答题与奖励</string>
+    <string name="guard_section_quiz_hint">管理已签名题库和信任密钥。这些操作会立即生效，不需要点击“保存并应用”。</string>
+    <string name="guard_section_service_hint">将本设备与家长服务配对，并查看最近一次签名策略同步。服务器操作会立即生效。</string>
+    <string name="guard_section_save_hint">“保存并应用”会写入每日额度、允许时段、启动器模式和答题开关。题库与家长服务操作会立即生效。</string>
+    <string name="guard_usage_access_hint">Android 要求先授予“使用情况访问”，守护才能统计应用使用时间。</string>
 </resources>

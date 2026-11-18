@@ -133,8 +133,8 @@
     <string name="update_ready_supporting">הבדיקה מתבצעת אוטומטית פעם ביום, וניתן להפעיל אותה גם עכשיו.</string>
     <string name="update_disabled_title">עדכונים מרחוק אינם מוגדרים</string>
     <string name="update_disabled_supporting">יש להגדיר כתובת עדכונים ומפתח אימות בזמן בניית גרסת השירות.</string>
-    <string name="admin_help_allow">\u2066Tailscale\u2069 ורכיבי המערכת החיוניים נשמרים תמיד. אפליקציה חדשה תיחסם עד לאישור מנהל.</string>
-    <string name="admin_help_block">\u2066Tailscale\u2069 ורכיבי המערכת החיוניים נשמרים תמיד. התקנות חדשות דורשות אישור מנהל.</string>
+    <string name="admin_help_allow">חבילות קישוריות ניהול ורכיבי המערכת החיוניים נשמרים תמיד. אפליקציה חדשה תיחסם עד לאישור מנהל.</string>
+    <string name="admin_help_block">חבילות קישוריות ניהול ורכיבי המערכת החיוניים נשמרים תמיד. התקנות חדשות דורשות אישור מנהל.</string>
     <string name="admin_error_recovery">לא ניתן ליצור קוד שחזור במכשיר.</string>
     <string name="admin_error_allowlist">לפני ההפעלה יש לבחור ולשמור את רשימת האפליקציות.</string>
     <string name="admin_pause_failed">השהיית ההגנה לא אומתה: %1$s</string>
@@ -379,4 +379,16 @@
     <string name="audit_mode_allow">נבחר מצב: רק אפליקציות מותרות</string>
     <string name="audit_mode_block">נבחר מצב: חסימת אפליקציות מסומנות</string>
     <string name="audit_apps_saved">רשימת האפליקציות נשמרה</string>
+    <string name="admin_tab_protection">הגנה ויישומים</string>
+    <string name="admin_tab_protection_description">בחרו את שיטת החסימה, היקף היישומים ובקרות מדיניות המערכת שפועלות כשההגנה פעילה.</string>
+    <string name="admin_tab_time">זמן ולמידה</string>
+    <string name="admin_tab_time_description">הגדירו מגבלות יומיות מקומיות, חלונות מותרים ותגמולי שאלון. מדיניות הורה משויכת גוברת לאחר הסנכרון.</string>
+    <string name="admin_tab_device">מכשיר וחיבור</string>
+    <string name="admin_tab_device_description">נהלו את פרופיל הקיוסק, קישוריות הניהול וזהות היישום המנוהל.</string>
+    <string name="admin_tab_security">חשבון ואבטחה</string>
+    <string name="admin_tab_security_description">שנו את PIN המנהל, החליפו קוד שחזור, ושלטו בגישת חירום או בנעילת מסך הניהול.</string>
+    <string name="admin_tab_records">רשומות</string>
+    <string name="admin_tab_records_description">עיינו במצב בריאות המכשיר וביומן הביקורת הניהולי.</string>
+    <string name="admin_tab_system">מערכת</string>
+    <string name="admin_tab_system_description">בדקו עדכונים חתומים ושנו את שפת היישום.</string>
 </resources>

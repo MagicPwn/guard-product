@@ -192,4 +192,11 @@
     <string name="guard_usage_reminder_intro">זוהי תזכורת ידידותית מתוכנית זמן המסך במכשיר. מדיניות ההורה ומגבלות האפליקציות עדיין חלות.</string>
     <string name="guard_usage_reminder_close">חזרה</string>
     <string name="guard_usage_reminder_app_fallback">האפליקציה הזו</string>
+    <string name="guard_section_limits">מגבלות זמן וגישה ליישומים</string>
+    <string name="guard_section_limits_hint">הגדירו כאן תקציב יומי, חלון מותר והתנהגות מסך הבית ליישום אחד. לחיצה על שמירה והחלה כותבת יחד את המגבלה, מסך הבית ומתג השאלון.</string>
+    <string name="guard_section_quiz">שאלון ותגמולים</string>
+    <string name="guard_section_quiz_hint">נהלו חבילות שאלון חתומות ומפתחות אמון. הפעולות חלות מיד ואינן דורשות לחיצה על שמירה.</string>
+    <string name="guard_section_service_hint">שייכו את המכשיר לשירות ההורה ובדקו את הסנכרון האחרון של המדיניות החתומה. פעולות השרת חלות מיד.</string>
+    <string name="guard_section_save_hint">שמירה והחלה כותבת את המגבלה היומית, החלון המותר, מצב מסך הבית ומתג השאלון. פעולות חבילת השאלון ושירות ההורה חלות מיד.</string>
+    <string name="guard_usage_access_hint">Android דורש גישת שימוש לפני ש-Guard יכול למדוד זמן יישומים.</string>
 </resources>

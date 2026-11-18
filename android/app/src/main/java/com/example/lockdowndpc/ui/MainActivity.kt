@@ -35,7 +35,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Rule
+import androidx.compose.material.icons.automirrored.rounded.Rule
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
@@ -48,6 +48,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,6 +59,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1012,6 +1015,33 @@ private fun LockedScreen(
     }
 }
 
+private enum class AdminTab(val label: Int, val description: Int) {
+    PROTECTION(R.string.admin_tab_protection, R.string.admin_tab_protection_description),
+    TIME(R.string.admin_tab_time, R.string.admin_tab_time_description),
+    DEVICE(R.string.admin_tab_device, R.string.admin_tab_device_description),
+    SECURITY(R.string.admin_tab_security, R.string.admin_tab_security_description),
+    RECORDS(R.string.admin_tab_records, R.string.admin_tab_records_description),
+    SYSTEM(R.string.admin_tab_system, R.string.admin_tab_system_description),
+}
+
+@Composable
+private fun AdminTabBar(selected: AdminTab, onSelect: (AdminTab) -> Unit) {
+    val tabs = AdminTab.values()
+    ScrollableTabRow(
+        selectedTabIndex = tabs.indexOf(selected),
+        edgePadding = 0.dp,
+        divider = {},
+    ) {
+        tabs.forEach { tab ->
+            Tab(
+                selected = tab == selected,
+                onClick = { onSelect(tab) },
+                text = { Text(text = stringResource(tab.label), maxLines = 1) },
+            )
+        }
+    }
+}
+
 @Composable
 private fun AdminScreen(
     status: ConsoleStatus,
@@ -1040,6 +1070,7 @@ private fun AdminScreen(
     onLock: () -> Unit,
 ) {
     val allowSelected = status.mode == AllowedAppsStore.ProtectionMode.ALLOW_SELECTED
+    var activeTab by rememberSaveable { mutableStateOf(AdminTab.PROTECTION) }
 
     LockdownScreen(
         title = stringResource(R.string.app_name),
@@ -1072,180 +1103,179 @@ private fun AdminScreen(
             onClick = onApply,
         )
 
-        Spacer(Modifier.height(28.dp))
-        SectionCard(title = stringResource(R.string.admin_section_protection)) {
-            ActionRow(
-                icon = Icons.Rounded.Tune,
-                title = stringResource(R.string.admin_mode_row),
-                supporting = stringResource(
-                    if (allowSelected) R.string.mode_label_allow else R.string.mode_label_block
-                ),
-                onClick = onPickMode,
-            )
-            ActionRow(
-                icon = Icons.Rounded.Apps,
-                title = stringResource(
-                    if (allowSelected) R.string.admin_choose_allow else R.string.admin_choose_block
-                ),
-                supporting = stringResource(R.string.admin_choose_supporting),
-                onClick = onChooseApps,
-                showDivider = true,
-            )
-            ActionRow(
-                icon = Icons.Rounded.Rule,
-                title = stringResource(R.string.admin_system_policy_row),
-                supporting = stringResource(R.string.admin_system_policy_supporting),
-                onClick = onOpenSystemPolicy,
-                showDivider = true,
-            )
-            ActionRow(
-                icon = Icons.Rounded.Build,
-                title = stringResource(R.string.maint_admin_row),
-                supporting = stringResource(R.string.maint_admin_supporting),
-                onClick = onOpenMaintenance,
-                showDivider = true,
-            )
-            if (status.protectionEnabled) {
+        Spacer(Modifier.height(24.dp))
+        AdminTabBar(selected = activeTab, onSelect = { activeTab = it })
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(activeTab.description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+
+        when (activeTab) {
+            AdminTab.PROTECTION -> SectionCard(title = stringResource(R.string.admin_section_protection)) {
                 ActionRow(
-                    icon = Icons.Rounded.Pause,
-                    title = stringResource(R.string.admin_pause),
-                    supporting = stringResource(R.string.admin_pause_supporting),
-                    onClick = onPause,
+                    icon = Icons.Rounded.Tune,
+                    title = stringResource(R.string.admin_mode_row),
+                    supporting = stringResource(
+                        if (allowSelected) R.string.mode_label_allow else R.string.mode_label_block
+                    ),
+                    onClick = onPickMode,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.Apps,
+                    title = stringResource(
+                        if (allowSelected) R.string.admin_choose_allow else R.string.admin_choose_block
+                    ),
+                    supporting = stringResource(R.string.admin_choose_supporting),
+                    onClick = onChooseApps,
+                    showDivider = true,
+                )
+                ActionRow(
+                    icon = Icons.AutoMirrored.Rounded.Rule,
+                    title = stringResource(R.string.admin_system_policy_row),
+                    supporting = stringResource(R.string.admin_system_policy_supporting),
+                    onClick = onOpenSystemPolicy,
+                    showDivider = true,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.Build,
+                    title = stringResource(R.string.maint_admin_row),
+                    supporting = stringResource(R.string.maint_admin_supporting),
+                    onClick = onOpenMaintenance,
+                    showDivider = true,
+                )
+                if (status.protectionEnabled) {
+                    ActionRow(
+                        icon = Icons.Rounded.Pause,
+                        title = stringResource(R.string.admin_pause),
+                        supporting = stringResource(R.string.admin_pause_supporting),
+                        onClick = onPause,
+                        showDivider = true,
+                    )
+                }
+            }
+
+            AdminTab.TIME -> SectionCard(title = stringResource(R.string.admin_tab_time)) {
+                ActionRow(
+                    icon = Icons.AutoMirrored.Rounded.Rule,
+                    title = stringResource(R.string.guard_title),
+                    supporting = stringResource(R.string.guard_description),
+                    onClick = onOpenGuard,
+                )
+            }
+
+            AdminTab.DEVICE -> SectionCard(title = stringResource(R.string.admin_tab_device)) {
+                ActionRow(
+                    icon = if (kiosk.state == KioskState.ACTIVE) {
+                        Icons.Rounded.Lock
+                    } else {
+                        Icons.Rounded.LockOpen
+                    },
+                    title = stringResource(R.string.admin_kiosk_row),
+                    supporting = stringResource(
+                        R.string.kiosk_profile_state_summary,
+                        stringResource(KioskLabels.profile(kiosk.mode)),
+                        stringResource(KioskLabels.state(kiosk.state)),
+                    ),
+                    onClick = onOpenKiosk,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.VpnKey,
+                    title = stringResource(R.string.admin_management_row),
+                    supporting = stringResource(R.string.admin_management_supporting),
+                    onClick = onOpenManagement,
+                    showDivider = true,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.VerifiedUser,
+                    title = stringResource(R.string.mgmtid_admin_row),
+                    supporting = stringResource(R.string.mgmtid_admin_supporting),
+                    onClick = onOpenManagementIdentity,
                     showDivider = true,
                 )
             }
-        }
 
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_access)) {
-            ActionRow(
-                icon = Icons.Rounded.Key,
-                title = stringResource(R.string.admin_change_pin),
-                onClick = onChangePin,
-            )
-            ActionRow(
-                icon = Icons.Rounded.VpnKey,
-                title = stringResource(R.string.admin_new_recovery),
-                supporting = stringResource(R.string.admin_new_recovery_supporting),
-                onClick = onNewRecoveryCode,
-                showDivider = true,
-            )
-        }
+            AdminTab.SECURITY -> SectionCard(title = stringResource(R.string.admin_tab_security)) {
+                ActionRow(
+                    icon = Icons.Rounded.Key,
+                    title = stringResource(R.string.admin_change_pin),
+                    onClick = onChangePin,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.VpnKey,
+                    title = stringResource(R.string.admin_new_recovery),
+                    supporting = stringResource(R.string.admin_new_recovery_supporting),
+                    onClick = onNewRecoveryCode,
+                    showDivider = true,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.Warning,
+                    title = stringResource(R.string.admin_recovery_row),
+                    supporting = stringResource(R.string.admin_recovery_supporting),
+                    onClick = onOpenRecovery,
+                    showDivider = true,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.Lock,
+                    title = stringResource(R.string.admin_lock),
+                    onClick = onLock,
+                    showDivider = true,
+                )
+            }
 
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_recovery)) {
-            ActionRow(
-                icon = Icons.Rounded.Warning,
-                title = stringResource(R.string.admin_recovery_row),
-                supporting = stringResource(R.string.admin_recovery_supporting),
-                onClick = onOpenRecovery,
-            )
-        }
+            AdminTab.RECORDS -> SectionCard(title = stringResource(R.string.admin_section_records)) {
+                ActionRow(
+                    icon = Icons.Rounded.MonitorHeart,
+                    title = stringResource(R.string.health_row_title),
+                    supporting = stringResource(R.string.health_row_supporting),
+                    onClick = onOpenHealth,
+                )
+                ActionRow(
+                    icon = Icons.Rounded.History,
+                    title = stringResource(R.string.admin_audit),
+                    onClick = onOpenAuditLog,
+                    showDivider = true,
+                )
+            }
 
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_updates)) {
-            ActionRow(
-                icon = Icons.Rounded.SystemUpdateAlt,
-                title = stringResource(
-                    when {
-                        !UpdateConfig.isConfigured -> R.string.update_disabled_title
-                        updateOperationInProgress -> R.string.update_checking_title
-                        updateSnapshot.phase == UpdatePhase.FAILED -> R.string.update_failed_title
-                        updateSnapshot.phase == UpdatePhase.INSTALLING -> R.string.update_installing_title
-                        else -> R.string.update_check_title
-                    }
-                ),
-                // An update message carries version identifiers and verification
-                // failures, so it is isolated rather than left to inherit the
-                // direction of the surrounding row.
-                supporting = updateSnapshot.message.takeIf { it.isNotBlank() }?.bidiIsolated()
-                    ?: stringResource(
-                        if (UpdateConfig.isConfigured) {
-                            R.string.update_ready_supporting
-                        } else {
-                            R.string.update_disabled_supporting
-                        }
-                    ),
-                enabled = UpdateConfig.isConfigured && !updateOperationInProgress,
-                onClick = onCheckUpdate,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_display)) {
-            ActionRow(
-                // A globe is not a directional glyph, so it is never mirrored.
-                icon = Icons.Rounded.Language,
-                title = stringResource(R.string.language_row_title),
-                supporting = stringResource(AppLocales.labelOf(AppLocales.current())),
-                onClick = onPickLanguage,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_kiosk)) {
-            ActionRow(
-                // A padlock is not a directional glyph, so it is never mirrored.
-                icon = if (kiosk.state == KioskState.ACTIVE) {
-                    Icons.Rounded.Lock
-                } else {
-                    Icons.Rounded.LockOpen
-                },
-                title = stringResource(R.string.admin_kiosk_row),
-                // Profile first, then state: an administrator glancing at this
-                // row needs to know whether the device is locked right now. The
-                // separator lives in strings.xml rather than in this expression,
-                // so it is visible to a translator and to the parity check.
-                supporting = stringResource(
-                    R.string.kiosk_profile_state_summary,
-                    stringResource(KioskLabels.profile(kiosk.mode)),
-                    stringResource(KioskLabels.state(kiosk.state)),
-                ),
-                onClick = onOpenKiosk,
-            )
-            ActionRow(
-                icon = Icons.Rounded.VpnKey,
-                title = stringResource(R.string.admin_management_row),
-                supporting = stringResource(R.string.admin_management_supporting),
-                onClick = onOpenManagement,
-                showDivider = true,
-            )
-            ActionRow(
-                icon = Icons.Rounded.VerifiedUser,
-                title = stringResource(R.string.mgmtid_admin_row),
-                supporting = stringResource(R.string.mgmtid_admin_supporting),
-                onClick = onOpenManagementIdentity,
-                showDivider = true,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        SectionCard(title = stringResource(R.string.admin_section_records)) {
-            ActionRow(
-                icon = Icons.Rounded.MonitorHeart,
-                title = stringResource(R.string.health_row_title),
-                supporting = stringResource(R.string.health_row_supporting),
-                onClick = onOpenHealth,
-            )
-            ActionRow(
-               icon = Icons.Rounded.History,
-               title = stringResource(R.string.admin_audit),
-               onClick = onOpenAuditLog,
-               showDivider = true,
-           )
-            ActionRow(
-                icon = Icons.Rounded.Rule,
-                title = stringResource(R.string.guard_title),
-                supporting = stringResource(R.string.guard_description),
-                onClick = onOpenGuard,
-                showDivider = true,
-            )
-            ActionRow(
-               icon = Icons.Rounded.Lock,
-                title = stringResource(R.string.admin_lock),
-                onClick = onLock,
-                showDivider = true,
-            )
+            AdminTab.SYSTEM -> {
+                SectionCard(title = stringResource(R.string.admin_section_updates)) {
+                    ActionRow(
+                        icon = Icons.Rounded.SystemUpdateAlt,
+                        title = stringResource(
+                            when {
+                                !UpdateConfig.isConfigured -> R.string.update_disabled_title
+                                updateOperationInProgress -> R.string.update_checking_title
+                                updateSnapshot.phase == UpdatePhase.FAILED -> R.string.update_failed_title
+                                updateSnapshot.phase == UpdatePhase.INSTALLING -> R.string.update_installing_title
+                                else -> R.string.update_check_title
+                            }
+                        ),
+                        supporting = updateSnapshot.message.takeIf { it.isNotBlank() }?.bidiIsolated()
+                            ?: stringResource(
+                                if (UpdateConfig.isConfigured) {
+                                    R.string.update_ready_supporting
+                                } else {
+                                    R.string.update_disabled_supporting
+                                }
+                            ),
+                        enabled = UpdateConfig.isConfigured && !updateOperationInProgress,
+                        onClick = onCheckUpdate,
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                SectionCard(title = stringResource(R.string.admin_section_display)) {
+                    ActionRow(
+                        icon = Icons.Rounded.Language,
+                        title = stringResource(R.string.language_row_title),
+                        supporting = stringResource(AppLocales.labelOf(AppLocales.current())),
+                        onClick = onPickLanguage,
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(24.dp))

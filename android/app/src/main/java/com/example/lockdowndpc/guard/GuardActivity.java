@@ -1,6 +1,9 @@
 package com.example.lockdowndpc.guard;
 
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -64,16 +67,19 @@ public final class GuardActivity extends AppCompatActivity {
         setTitle(R.string.guard_title);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(32, 32, 32, 32);
+        root.setPadding(dp(20), dp(20), dp(20), dp(32));
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
         setContentView(scroll);
         TextView title = new TextView(this);
         title.setText(R.string.guard_title);
         title.setTextSize(24);
+        title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
         TextView warning = new TextView(this);
         warning.setText(R.string.guard_status_warning);
+        warning.setTextColor(Color.rgb(70, 78, 92));
+        warning.setPadding(0, dp(6), 0, 0);
         root.addView(warning);
         GuardPolicy policy;
         try {
@@ -83,75 +89,81 @@ public final class GuardActivity extends AppCompatActivity {
             finish();
             return;
         }
-        enabled = addSwitch(root, R.string.guard_enable, policy.enabled());
-        launcher = addSwitch(root, R.string.guard_launcher, policy.launcherEnabled());
-        TextView launcherNotice = new TextView(this);
-        launcherNotice.setText(R.string.guard_launcher_unavailable);
-        root.addView(launcherNotice);
-        quiz = addSwitch(root, R.string.guard_quiz, policy.quizGateEnabled());
+
+        LinearLayout limits = addSection(root, R.string.guard_section_limits,
+                R.string.guard_section_limits_hint);
+        enabled = addSwitch(limits, R.string.guard_enable, policy.enabled());
         String first = policy.dailyBudgets().isEmpty() ? "" : policy.dailyBudgets().keySet().iterator().next();
-        packageName = addField(root, R.string.guard_package_hint, first);
-        minutes = addField(root, R.string.guard_minutes_hint,
+        packageName = addField(limits, R.string.guard_package_hint, first);
+        minutes = addField(limits, R.string.guard_minutes_hint,
                 first.isEmpty() ? "60" : Integer.toString(policy.dailyBudgets().get(first)));
         minutes.setInputType(InputType.TYPE_CLASS_NUMBER);
-        scheduleWindow = addField(root, R.string.guard_schedule_window_hint, "16:00-18:00");
-        scheduleDays = addField(root, R.string.guard_schedule_days_hint, "*");
-        scheduleStatus = new TextView(this);
-        root.addView(scheduleStatus);
-        button(root, R.string.guard_schedule_apply).setOnClickListener(
+        scheduleWindow = addField(limits, R.string.guard_schedule_window_hint, "16:00-18:00");
+        scheduleDays = addField(limits, R.string.guard_schedule_days_hint, "*");
+        scheduleStatus = addNote(limits);
+        button(limits, R.string.guard_schedule_apply).setOnClickListener(
                 view -> applySchedule(false));
-        button(root, R.string.guard_schedule_clear).setOnClickListener(
+        button(limits, R.string.guard_schedule_clear).setOnClickListener(
                 view -> applySchedule(true));
-        button(root, R.string.guard_usage_access).setOnClickListener(view -> {
+        launcher = addSwitch(limits, R.string.guard_launcher, policy.launcherEnabled());
+        TextView launcherNotice = addNote(limits);
+        launcherNotice.setText(R.string.guard_launcher_unavailable);
+        quiz = addSwitch(limits, R.string.guard_quiz, policy.quizGateEnabled());
+        button(limits, R.string.guard_usage_access).setOnClickListener(view -> {
             if (!AdminSession.isUnlocked()) { finish(); return; }
             startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
         });
-        addRemoteSection(root);
-        saveButton = button(root, R.string.guard_save);
+        TextView usageHint = addNote(limits);
+        usageHint.setText(R.string.guard_usage_access_hint);
+        saveButton = button(limits, R.string.guard_save);
         saveButton.setOnClickListener(this::save);
-        quizPackStatus = new TextView(this);
-        root.addView(quizPackStatus);
-        EditText trustAnchor = addField(root, R.string.guard_quiz_trust_hint, "");
+        TextView saveHint = addNote(limits);
+        saveHint.setText(R.string.guard_section_save_hint);
+
+        LinearLayout quizSection = addSection(root, R.string.guard_section_quiz,
+                R.string.guard_section_quiz_hint);
+        quizPackStatus = addNote(quizSection);
+        EditText trustAnchor = addField(quizSection, R.string.guard_quiz_trust_hint, "");
         trustAnchor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        button(root, R.string.guard_quiz_install_trust).setOnClickListener(
+        button(quizSection, R.string.guard_quiz_install_trust).setOnClickListener(
                 view -> installTrustAnchor(trustAnchor.getText().toString()));
-        button(root, R.string.guard_quiz_reset_trust).setOnClickListener(
+        button(quizSection, R.string.guard_quiz_reset_trust).setOnClickListener(
                 view -> resetQuizTrust());
-        button(root, R.string.guard_quiz_import).setOnClickListener(view -> {
+        button(quizSection, R.string.guard_quiz_import).setOnClickListener(view -> {
             if (!AdminSession.isUnlocked()) { finish(); return; }
             openQuizPack.launch(new String[]{"application/json", "text/plain"});
         });
-        rollbackButton = button(root, R.string.guard_quiz_rollback);
+        rollbackButton = button(quizSection, R.string.guard_quiz_rollback);
         rollbackButton.setOnClickListener(view -> rollbackQuizPack());
+        button(quizSection, R.string.guard_quiz_open).setOnClickListener(view ->
+                startActivity(new Intent(this, GuardQuizActivity.class)));
+
+        addRemoteSection(root);
         refreshQuizPackStatus();
         refreshScheduleStatus(policy);
-        button(root, R.string.guard_quiz_open).setOnClickListener(view ->
-                startActivity(new Intent(this, GuardQuizActivity.class)));
+        TextView footerGap = new TextView(this);
+        footerGap.setPadding(0, dp(16), 0, 0);
+        root.addView(footerGap);
         button(root, R.string.guard_close).setOnClickListener(view -> finish());
     }
 
     private void addRemoteSection(LinearLayout root) {
-        TextView heading = new TextView(this);
-        heading.setText(R.string.guard_remote_section);
-        heading.setTextSize(20);
-        heading.setPadding(0, 32, 0, 8);
-        root.addView(heading);
-        remoteServer = addField(root, R.string.guard_remote_server_hint,
+        LinearLayout section = addSection(root, R.string.guard_remote_section,
+                R.string.guard_section_service_hint);
+        remoteServer = addField(section, R.string.guard_remote_server_hint,
                 GuardRemoteStore.serverUrl(this));
         remoteServer.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_URI
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        button(root, R.string.guard_remote_save_server).setOnClickListener(
+        button(section, R.string.guard_remote_save_server).setOnClickListener(
                 view -> saveRemoteServer());
-        remoteEnrollButton = button(root, R.string.guard_remote_enroll);
+        remoteEnrollButton = button(section, R.string.guard_remote_enroll);
         remoteEnrollButton.setOnClickListener(view -> runRemote(true));
-        remoteSyncButton = button(root, R.string.guard_remote_sync);
+        remoteSyncButton = button(section, R.string.guard_remote_sync);
         remoteSyncButton.setOnClickListener(view -> runRemote(false));
-        remotePinButton = button(root, R.string.guard_remote_pin_key);
+        remotePinButton = button(section, R.string.guard_remote_pin_key);
         remotePinButton.setOnClickListener(view -> pinRemoteKey());
-        remoteStatus = new TextView(this);
-        remoteStatus.setPadding(0, 12, 0, 12);
-        root.addView(remoteStatus);
+        remoteStatus = addNote(section);
         refreshRemoteStatus();
     }
 
@@ -282,11 +294,50 @@ public final class GuardActivity extends AppCompatActivity {
         }
     }
 
+    private LinearLayout addSection(LinearLayout root, int title, int hint) {
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextSize(18);
+        heading.setTypeface(null, Typeface.BOLD);
+        heading.setTextColor(getColor(R.color.brand_primary));
+        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        headingParams.topMargin = dp(26);
+        root.addView(heading, headingParams);
+        TextView description = new TextView(this);
+        description.setText(hint);
+        description.setTextSize(13);
+        description.setTextColor(Color.rgb(70, 78, 92));
+        description.setPadding(0, dp(4), 0, dp(10));
+        root.addView(description);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(8), dp(16), dp(12));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setCornerRadius(dp(14));
+        background.setStroke(dp(1), Color.rgb(200, 208, 220));
+        card.setBackground(background);
+        root.addView(card);
+        return card;
+    }
+
+    private TextView addNote(LinearLayout root) {
+        TextView note = new TextView(this);
+        note.setTextSize(13);
+        note.setTextColor(Color.rgb(70, 78, 92));
+        note.setPadding(0, dp(4), 0, dp(8));
+        root.addView(note);
+        return note;
+    }
+
     private Switch addSwitch(LinearLayout root, int label, boolean checked) {
         Switch value = new Switch(this);
         value.setText(label);
         value.setChecked(checked);
-        root.addView(value);
+        value.setPadding(0, dp(8), 0, dp(8));
+        root.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return value;
     }
 
@@ -295,15 +346,24 @@ public final class GuardActivity extends AppCompatActivity {
         field.setHint(hint);
         field.setText(value);
         field.setSingleLine(true);
-        root.addView(field);
+        field.setPadding(dp(8), dp(10), dp(8), dp(10));
+        root.addView(field, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return field;
     }
 
     private Button button(LinearLayout root, int label) {
         Button value = new Button(this);
         value.setText(label);
-        root.addView(value);
+        value.setAllCaps(false);
+        value.setMinHeight(dp(48));
+        root.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return value;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void applySchedule(boolean clear) {

@@ -114,8 +114,8 @@
     <string name="update_ready_supporting">The check runs automatically once a day, and you can also run it now.</string>
     <string name="update_disabled_title">Remote updates are not configured</string>
     <string name="update_disabled_supporting">An update URL and a verification key have to be configured when the service build is produced.</string>
-    <string name="admin_help_allow">Tailscale and the essential system components are always kept. A newly installed app is blocked until an administrator approves it.</string>
-    <string name="admin_help_block">Tailscale and the essential system components are always kept. New installations require administrator approval.</string>
+    <string name="admin_help_allow">Management connectivity packages and essential system components are always kept. A newly installed app is blocked until an administrator approves it.</string>
+    <string name="admin_help_block">Management connectivity packages and essential system components are always kept. New installations require administrator approval.</string>
     <string name="admin_error_recovery">A recovery code could not be created on this device.</string>
     <string name="admin_error_allowlist">Select and save the app list before activating protection.</string>
     <string name="admin_pause_failed">Pausing protection was not verified: %1$s</string>
@@ -357,4 +357,16 @@
     <string name="audit_mode_allow">Mode selected: allowed apps only</string>
     <string name="audit_mode_block">Mode selected: block the selected apps</string>
     <string name="audit_apps_saved">The app list was saved</string>
+    <string name="admin_tab_protection">Protection &amp; apps</string>
+    <string name="admin_tab_protection_description">Choose the blocking method, app scope and system policy controls that apply while protection is on.</string>
+    <string name="admin_tab_time">Time &amp; learning</string>
+    <string name="admin_tab_time_description">Set local daily limits, allowed windows and quiz rewards. A paired parent policy takes precedence after it syncs.</string>
+    <string name="admin_tab_device">Device &amp; connection</string>
+    <string name="admin_tab_device_description">Manage the kiosk profile, management connectivity and managed app identity.</string>
+    <string name="admin_tab_security">Account &amp; security</string>
+    <string name="admin_tab_security_description">Change the administrator PIN, rotate the recovery code, and control emergency access or lock the console.</string>
+    <string name="admin_tab_records">Records</string>
+    <string name="admin_tab_records_description">Review device health and the administration audit log.</string>
+    <string name="admin_tab_system">System</string>
+    <string name="admin_tab_system_description">Check for signed updates and change the app language.</string>
 </resources>

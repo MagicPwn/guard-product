@@ -192,4 +192,11 @@
     <string name="guard_usage_reminder_intro">This is a friendly reminder from the screen-time plan on this device. Parent policy and app limits still apply.</string>
     <string name="guard_usage_reminder_close">Back</string>
     <string name="guard_usage_reminder_app_fallback">This app</string>
+    <string name="guard_section_limits">Time limits and app access</string>
+    <string name="guard_section_limits_hint">Set one app’s daily budget, allowed window and launcher behavior here. Press Save and apply to activate the limit, launcher and quiz switch together.</string>
+    <string name="guard_section_quiz">Quiz and rewards</string>
+    <string name="guard_section_quiz_hint">Manage signed quiz packs and trust keys. These actions apply immediately and do not need the Save button.</string>
+    <string name="guard_section_service_hint">Pair this device with the parent service and review the last signed-policy sync. Server actions apply immediately.</string>
+    <string name="guard_section_save_hint">Save and apply writes the daily limit, allowed window, launcher mode and quiz switch. Quiz pack and parent-service actions apply immediately.</string>
+    <string name="guard_usage_access_hint">Android requires Usage Access before Guard can measure app time.</string>
 </resources>
