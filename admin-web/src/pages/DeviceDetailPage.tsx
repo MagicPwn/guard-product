@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
@@ -26,6 +26,9 @@ import {
   type HelpContactForm,
   type PolicyFormState,
   type QuizTriggerForm,
+  scheduleRulesFromText,
+  scheduleRulesToText,
+  type ScheduleRuleForm,
   type QuizTriggerType
 } from "../policy";
 import { errorText, useI18n } from "../i18n";
@@ -33,10 +36,122 @@ import { errorText, useI18n } from "../i18n";
 const CallPanel = lazy(() => import("../components/CallPanel")
   .then((module) => ({ default: module.CallPanel })));
 
+type DeviceTab = "overview" | "time" | "quiz" | "care" | "records";
+
+const DEVICE_TABS: Array<{ id: DeviceTab; label: string; description: string }> = [
+  {
+    id: "overview",
+    label: "Overview",
+    description: "A quick summary and the recommended setup order. Use the tabs to edit one area at a time."
+  },
+  {
+    id: "time",
+    label: "Time & apps",
+    description: "Set daily limits, allowed windows, reminders and temporary allowances. These rules decide when each app can be used."
+  },
+  {
+    id: "quiz",
+    label: "Quiz & rewards",
+    description: "Configure the quiz gate, choose which apps trigger a quiz, and review quiz results."
+  },
+  {
+    id: "care",
+    label: "Communication",
+    description: "Manage visible calls, notices, screenshots, emergency contacts and replies to the child's help requests."
+  },
+  {
+    id: "records",
+    label: "Records",
+    description: "Review usage summaries, audit events, signed policy history and the current signed envelope."
+  }
+];
+
+const WEEKDAYS = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 7, label: "Sun" }
+];
+
+function timeValue(minute: number): string {
+  const safe = Math.max(0, Math.min(1439, Math.round(minute)));
+  return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function minuteValue(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
+  return Math.max(0, Math.min(1439, hours * 60 + minutes));
+}
+
+function toggleDay(days: string, day: number): string {
+  const current = new Set(days.split(",").map((entry) => entry.trim()).filter(Boolean).map(Number));
+  if (current.has(day)) current.delete(day); else current.add(day);
+  return [...current].sort((left, right) => left - right).join(", ");
+}
+
+function hasScheduleForPackage(text: string, packageName: string): boolean {
+  return text.includes(`"${packageName}"`);
+}
+
+interface PackageOption {
+  packageName: string;
+  label: string;
+}
+
+function PackagePicker({ value, options, onChange, emptyHint }: {
+  value: string;
+  options: PackageOption[];
+  onChange: (value: string) => void;
+  emptyHint: string;
+}) {
+  const { t } = useI18n();
+  const selected = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  const selectedSet = new Set(selected);
+  const available = options.filter((option) => !selectedSet.has(option.packageName));
+  const labelOf = (packageName: string) =>
+    options.find((option) => option.packageName === packageName)?.label ?? packageName;
+  const setSelected = (next: string[]) => onChange(next.join(", "));
+
+  return (
+    <div className="package-picker">
+      <div className="package-chips" aria-live="polite">
+        {selected.length === 0
+          ? <span className="hint">{t("No apps selected yet.")}</span>
+          : selected.map((packageName) => (
+            <span className="package-chip" key={packageName}>
+              <span>{labelOf(packageName)}</span>
+              <span className="mono">{packageName}</span>
+              <button type="button" className="chip-remove" aria-label={t("Remove {app}", { app: labelOf(packageName) })}
+                onClick={() => setSelected(selected.filter((item) => item !== packageName))}>×</button>
+            </span>
+          ))}
+      </div>
+      <select value="" disabled={available.length === 0}
+        onChange={(event) => {
+          if (!event.target.value) return;
+          setSelected([...selected, event.target.value]);
+        }}>
+        <option value="">{available.length === 0 ? t("No eligible apps available") : t("Add an installed app...")}</option>
+        {available.map((option) => (
+          <option key={option.packageName} value={option.packageName}>
+            {option.label} · {option.packageName}
+          </option>
+        ))}
+      </select>
+      {options.length === 0 && <p className="hint">{emptyHint}</p>}
+    </div>
+  );
+}
+
 export function DeviceDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { t, formatDate, formatTime } = useI18n();
+  const [activeTab, setActiveTab] = useState<DeviceTab>("overview");
   const [device, setDevice] = useState<Device | null>(null);
   const [envelope, setEnvelope] = useState<PolicyEnvelope | null>(null);
   const [policyHistory, setPolicyHistory] = useState<PolicyHistoryItem[]>([]);
@@ -67,6 +182,33 @@ export function DeviceDetailPage() {
   const [categoryMinutes, setCategoryMinutes] = useState(60);
   const [grantPackage, setGrantPackage] = useState("");
   const [grantMinutes, setGrantMinutes] = useState(15);
+
+  const appOptions = useMemo(() => {
+    const options = new Map<string, PackageOption>();
+    for (const app of form.apps) {
+      options.set(app.packageName, { packageName: app.packageName, label: app.label || app.packageName });
+    }
+    for (const app of catalog) {
+      if (!options.has(app.package_name)) {
+        options.set(app.package_name, { packageName: app.package_name, label: app.label || app.package_name });
+      }
+    }
+    return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+  }, [form.apps, catalog]);
+
+  const eligibleTriggerApps = useMemo(() => form.apps
+    .filter((app) => !app.blocked && !app.alwaysAllowed
+      && (app.dailyMinutes !== null || hasScheduleForPackage(form.schedulesText, app.packageName)))
+    .map((app) => ({ packageName: app.packageName, label: app.label || app.packageName }))
+    .sort((left, right) => left.label.localeCompare(right.label, "zh-CN")), [form.apps, form.schedulesText]);
+
+  const scheduleEditor = useMemo(() => {
+    try {
+      return { rules: scheduleRulesFromText(form.schedulesText), error: null as string | null };
+    } catch (problem) {
+      return { rules: [] as ScheduleRuleForm[], error: problem instanceof Error ? problem.message : String(problem) };
+    }
+  }, [form.schedulesText]);
 
   const load = useCallback(async () => {
     try {
@@ -164,6 +306,7 @@ export function DeviceDetailPage() {
     setForm((current) => {
       const firstManaged = current.apps.find(
         (app) => !app.blocked && !app.alwaysAllowed
+          && (app.dailyMinutes !== null || hasScheduleForPackage(current.schedulesText, app.packageName))
       )?.packageName ?? "";
       return {
         ...current,
@@ -205,6 +348,51 @@ export function DeviceDetailPage() {
       ...current,
       quizTriggers: current.quizTriggers.filter((_, triggerIndex) => triggerIndex !== index)
     }));
+  }
+
+  function addScheduleRule() {
+    const packageName = appOptions[0]?.packageName ?? "";
+    if (!packageName) return;
+    setForm((current) => {
+      let rules: ScheduleRuleForm[];
+      try { rules = scheduleRulesFromText(current.schedulesText); } catch { rules = []; }
+      return {
+        ...current,
+        schedulesText: scheduleRulesToText([...rules, {
+          packageName,
+          days: "1, 2, 3, 4, 5",
+          startMinute: 16 * 60,
+          durationMinutes: 120
+        }])
+      };
+    });
+  }
+
+  function updateScheduleRule(index: number, patch: Partial<ScheduleRuleForm>) {
+    setForm((current) => {
+      try {
+        const rules = scheduleRulesFromText(current.schedulesText);
+        if (!rules[index]) return current;
+        rules[index] = { ...rules[index], ...patch };
+        return { ...current, schedulesText: scheduleRulesToText(rules) };
+      } catch {
+        return current;
+      }
+    });
+  }
+
+  function removeScheduleRule(index: number) {
+    setForm((current) => {
+      try {
+        return {
+          ...current,
+          schedulesText: scheduleRulesToText(
+            scheduleRulesFromText(current.schedulesText).filter((_, ruleIndex) => ruleIndex !== index))
+        };
+      } catch {
+        return current;
+      }
+    });
   }
 
   async function sendNotice(kind: Notice["kind"]) {
@@ -447,250 +635,422 @@ export function DeviceDetailPage() {
       {error && <p className="error" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
 
-      <form className="card" onSubmit={publish}>
-        <div className="page-title">
-          <div>
-            <h2>{t("Policy")}</h2>
-            <p className="muted">
-              {envelope
-                ? t("Latest signed revision {revision} · key {key}...", {
-                  revision: envelope.revision, key: envelope.key_id.slice(0, 12)
-                })
-                : t("No policy has been published yet.")}
-            </p>
+      <nav className="device-tabs" role="tablist" aria-label={t("Device settings sections")}>
+        {DEVICE_TABS.map((tab) => (
+          <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? "device-tab active" : "device-tab"}
+            onClick={() => setActiveTab(tab.id)}>
+            {t(tab.label)}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "overview" && (
+        <section className="tab-panel" role="tabpanel" aria-label={t("Overview")}>
+          <div className="tab-intro">
+            <h2>{t("Device overview")}</h2>
+            <p>{t(DEVICE_TABS[0].description)}</p>
           </div>
-          <label className="toggle">
-            <input type="checkbox" checked={form.enabled}
-              onChange={(event) => update("enabled", event.target.checked)} />
-            {t("Enable Guard")}
-          </label>
-        </div>
-        <div className="form-grid">
-          <label>{t("Timezone (IANA)")}
-            <input value={form.timezone} onChange={(event) => update("timezone", event.target.value)} />
-          </label>
-          <label>{t("Daily quiz attempts")}
-            <input type="number" min={0} max={1000} value={form.maxAttemptsPerDay}
-              onChange={(event) => update("maxAttemptsPerDay", Number(event.target.value))} />
-          </label>
-          <label>{t("Reward minutes")}
-            <input type="number" min={0} max={1440} value={form.rewardMinutes}
-              onChange={(event) => update("rewardMinutes", Number(event.target.value))} />
-          </label>
-          <label>{t("Wrong-answer cooldown (seconds)")}
-            <input type="number" min={0} max={86400} value={form.cooldownSeconds}
-              onChange={(event) => update("cooldownSeconds", Number(event.target.value))} />
-          </label>
-          <label>{t("Budget warning (minutes remaining)")}
-            <input type="number" min={0} max={1440} value={form.budgetWarningMinutes}
-              onChange={(event) => update("budgetWarningMinutes", Number(event.target.value))} />
-          </label>
-          <label>{t("Continuous-use reminder (minutes)")}
-            <input type="number" min={0} max={1440} value={form.continuousUseReminderMinutes}
-              onChange={(event) => update("continuousUseReminderMinutes", Number(event.target.value))} />
-          </label>
-          <p className="hint wide">
-            {t("Set either reminder to 0 to disable it. The child device shows a local notification once per app per day when a daily budget is within the warning threshold, and once per foreground session when continuous use reaches the reminder threshold. Always-allowed, always-blocked and protected apps are never reminded.")}
-          </p>
-          <label className="toggle wide">
-            <input type="checkbox" checked={form.launcherEnabled}
-              onChange={(event) => update("launcherEnabled", event.target.checked)} />
-            {t("Use Guard as the managed HOME launcher on the child device")}
-          </label>
-          <label className="toggle wide">
-            <input type="checkbox" checked={form.quizGateEnabled}
-              onChange={(event) => update("quizGateEnabled", event.target.checked)} />
-            {t("Allow a signed quiz reward after the daily budget is exhausted")}
-          </label>
-          <div className="wide quiz-filter-editor">
-            <h3>{t("Quiz pack filters")}</h3>
-            <p className="hint">
-              {t("Blank lists mean no restriction. Comma-separated values are matched against signed question metadata. The child device must already trust and import a signed pack whose questions carry that metadata.")}
-            </p>
-            <div className="form-grid">
-              <label>{t("Questions per reward attempt")}
-                <input type="number" min={1} max={10} value={form.quizQuestionCount}
-                  onChange={(event) => update("quizQuestionCount", Number(event.target.value))} />
-              </label>
-              <label>{t("Subjects")}
-                <input placeholder={t("mathematics, science")} value={form.quizSubjects}
-                  onChange={(event) => update("quizSubjects", event.target.value)} />
-              </label>
-              <label>{t("Grades (0 = unspecified)")}
-                <input placeholder={t("3, 4, 5")} value={form.quizGrades}
-                  onChange={(event) => update("quizGrades", event.target.value)} />
-              </label>
-              <label>{t("Difficulties")}
-                <input placeholder={t("easy, medium")} value={form.quizDifficulties}
-                  onChange={(event) => update("quizDifficulties", event.target.value)} />
-              </label>
-              <label>{t("Languages")}
-                <input placeholder={t("en, zh-CN")} value={form.quizLanguages}
-                  onChange={(event) => update("quizLanguages", event.target.value)} />
-              </label>
-              <label>{t("Tags")}
-                <input placeholder={t("arithmetic, fractions")} value={form.quizTags}
-                  onChange={(event) => update("quizTags", event.target.value)} />
-              </label>
-            </div>
+          <div className="summary-grid">
+            <article className="summary-card">
+              <span className="summary-label">{t("Device status")}</span>
+              <strong className={device.confirmed ? "summary-ok" : "summary-warn"}>
+                {device.confirmed ? t("Protected") : t("Awaiting confirmation")}
+              </strong>
+              <p className="hint">{device.confirmed
+                ? t("The child device has confirmed pairing and can receive signed policies.")
+                : t("Ask the child device to open Parent service and tap Sync now to confirm pairing.")}</p>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Current policy")}</span>
+              <strong>{envelope ? t("Revision {revision}", { revision: envelope.revision }) : t("Not published")}</strong>
+              <p className="hint">{envelope
+                ? t("The child device applies this revision on its next successful sync.")
+                : t("No signed policy exists yet. Configure the tabs below and publish once.")}</p>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Managed apps")}</span>
+              <strong>{form.apps.length}</strong>
+              <p className="hint">{t("{allowed} always allowed · {blocked} always blocked", {
+                allowed: form.apps.filter((app) => app.alwaysAllowed).length,
+                blocked: form.apps.filter((app) => app.blocked).length
+              })}</p>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Latest usage")}</span>
+              <strong>{usage[0]
+                ? t("{minutes} min", { minutes: Object.values(usage[0].app_minutes).reduce((sum, value) => sum + value, 0) })
+                : t("No data yet")}</strong>
+              <p className="hint">{usage[0] ? usage[0].day : t("The child device uploads usage after it syncs.")}</p>
+            </article>
           </div>
-          <div className="wide quiz-filter-editor">
-            <h3>{t("Task-page emergency contacts")}</h3>
-            <p className="hint">
-              {t("These contacts appear on the child task page and open the system dialer after a tap. Guard never places a call or sends a message automatically. Leave the list empty if no trusted numbers should be shown.")}
-            </p>
+          <section className="card setup-guide">
+            <h2>{t("Recommended setup order")}</h2>
+            <ol className="setup-list">
+              <li><strong>{t("1. Confirm pairing")}</strong><p>{t("The child device must confirm pairing before it can receive policies.")}</p></li>
+              <li><strong>{t("2. Set time limits and allowed windows")}</strong><p>{t("Choose which apps are limited, blocked or always allowed.")}</p></li>
+              <li><strong>{t("3. Configure quiz rewards and triggers")}</strong><p>{t("Pick apps from the device-reported list instead of typing package names.")}</p></li>
+              <li><strong>{t("4. Publish and sync")}</strong><p>{t("Publish the signed policy, then let the child device sync. Check Records and audit for the result.")}</p></li>
+            </ol>
             <div className="row-actions">
-              <button type="button" className="secondary" disabled={form.helpContacts.length >= 3}
-                onClick={addHelpContact}>{t("Add contact")}</button>
-              <span className="hint">{t("{count} of 3 contacts", { count: form.helpContacts.length })}</span>
+              <button type="button" className="secondary" onClick={() => setActiveTab("time")}>{t("Set time limits")}</button>
+              <button type="button" className="secondary" onClick={() => setActiveTab("quiz")}>{t("Configure quizzes")}</button>
+              <button type="button" className="secondary" onClick={() => setActiveTab("care")}>{t("Open communication tools")}</button>
             </div>
-            {form.helpContacts.length === 0
-              ? <p className="empty">{t("No task-page contacts configured.")}</p>
-              : form.helpContacts.map((contact, index) => (
-                <article className="question-card" key={index}>
-                  <div className="form-grid">
-                    <label>{t("Label")}
-                      <input maxLength={40} placeholder={t("Parent, school office, trusted adult")}
-                        value={contact.label}
-                        onChange={(event) => updateHelpContact(index, { label: event.target.value })} />
-                    </label>
-                    <label>{t("Phone number")}
-                      <input maxLength={24} inputMode="tel" placeholder="+86 138 0000 0000"
-                        value={contact.phone}
-                        onChange={(event) => updateHelpContact(index, { phone: event.target.value })} />
-                    </label>
-                  </div>
-                  <button type="button" className="link-button"
-                    onClick={() => removeHelpContact(index)}>{t("Remove contact")}</button>
-                </article>
-              ))}
+          </section>
+        </section>
+      )}
+
+      {(activeTab === "time" || activeTab === "quiz" || activeTab === "care") && (
+        <form className="card policy-form" onSubmit={publish}>
+          <div className="tab-intro">
+            <h2>{t("Policy settings")}</h2>
+            <p>{t(DEVICE_TABS.find((tab) => tab.id === activeTab)?.description ?? "")}</p>
+            <p className="hint">{t("Switching tabs keeps your edits. Nothing reaches the child device until you publish at the bottom of the page.")}</p>
           </div>
-          <div className="wide quiz-filter-editor">
-            <h3>{t("Automatic quiz triggers")}</h3>
-            <p className="hint">
-              {t("Trigger targets must also have a daily budget or allowed window. Trigger rules are part of the signed policy; always-blocked, system, dialer, HOME and Guard apps are rejected.")}
-            </p>
-            <div className="row-actions">
-              <button type="button" className="secondary" onClick={() => addTrigger("total_usage")}>{t("Add total-usage trigger")}</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("app_enter")}>{t("Add app-entry trigger")}</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("continuous_use")}>{t("Add continuous-use trigger")}</button>
-              <button type="button" className="secondary" onClick={() => addTrigger("schedule_start")}>{t("Add schedule-start trigger")}</button>
-            </div>
-            {form.quizTriggers.length === 0
-              ? <p className="empty">{t("No automatic quiz triggers. The child can still open the quiz manually.")}</p>
-              : form.quizTriggers.map((trigger, index) => (
-                <article className="question-card trigger-card" key={index}>
-                  <div className="page-title">
-                    <strong>{t("Trigger {number}", { number: index + 1 })}</strong>
-                    <select value={trigger.type}
-                      onChange={(event) => updateTrigger(index, { type: event.target.value as QuizTriggerType })}>
-                      <option value="total_usage">{t("Total usage")}</option>
-                      <option value="app_enter">{t("App entry")}</option>
-                      <option value="continuous_use">{t("Continuous foreground use")}</option>
-                      <option value="schedule_start">{t("Schedule start")}</option>
-                    </select>
-                  </div>
-                  <div className="form-grid">
-                    <label className="wide">{t("Target packages (comma separated)")}
-                      <input value={trigger.packages}
-                        onChange={(event) => updateTrigger(index, { packages: event.target.value })} />
-                    </label>
-                    {(trigger.type === "total_usage" || trigger.type === "continuous_use") && (
-                      <label>{t(trigger.type === "total_usage" ? "Combined usage threshold (minutes)" : "Continuous use threshold (minutes)")}
-                        <input type="number" min={1} max={1440} value={trigger.minutes}
-                          onChange={(event) => updateTrigger(index, { minutes: Number(event.target.value) })} />
-                      </label>
-                    )}
-                    {trigger.type === "app_enter" && (
-                      <label>{t("Delay after entry (seconds)")}
-                        <input type="number" min={0} max={3600} value={trigger.delaySeconds}
-                          onChange={(event) => updateTrigger(index, { delaySeconds: Number(event.target.value) })} />
-                      </label>
-                    )}
-                    {trigger.type === "schedule_start" && (
-                      <>
-                        <label>{t("Days (1 = Monday, 7 = Sunday)")}
-                          <input value={trigger.days}
-                            onChange={(event) => updateTrigger(index, { days: event.target.value })} />
-                        </label>
-                        <label>{t("Start minute (0-1439)")}
-                          <input type="number" min={0} max={1439} value={trigger.startMinute}
-                            onChange={(event) => updateTrigger(index, { startMinute: Number(event.target.value) })} />
-                        </label>
-                      </>
-                    )}
-                  </div>
-                  <button type="button" className="link-button" onClick={() => removeTrigger(index)}>{t("Remove trigger")}</button>
-                </article>
-              ))}
-          </div>
-          <div className="wide app-policy-editor">
-            <h3>{t("App policies")}</h3>
-            <p className="hint">{t("Installed apps are reported by the device on sync. A blocked app stays blocked and cannot be temporarily allowed. An always-allowed app bypasses daily budgets, allowed windows and quiz gates.")}</p>
-            <div className="row-actions category-actions">
-              <select value={selectedCategory} onChange={(event) => setSelectedCategory(Number(event.target.value))}>
-                {Object.entries(CATEGORY_LABELS).map(([value, label]) =>
-                  <option key={value} value={value}>{t(label)}</option>)}
-              </select>
-              <input type="number" min={0} max={1440} value={categoryMinutes}
-                onChange={(event) => setCategoryMinutes(Number(event.target.value))} />
-              <button type="button" className="secondary" onClick={() => applyToCategory("minutes")}>{t("Apply minutes to category")}</button>
-              <button type="button" className="secondary" onClick={() => applyToCategory("blocked")}>{t("Block category")}</button>
-              <button type="button" className="secondary" onClick={() => applyToCategory("always")}>{t("Always allow category")}</button>
-            </div>
-            <div className="table-wrap"><table>
-              <thead><tr><th>{t("App")}</th><th>{t("Category")}</th><th>{t("Daily minutes")}</th><th>{t("Blocked")}</th><th>{t("Always allowed")}</th><th /></tr></thead>
-              <tbody>
-                {form.apps.length === 0 ? <tr><td colSpan={6} className="empty">{t("No app policies yet. Add an installed app below.")}</td></tr> :
-                  form.apps.map((app, index) => (
-                    <tr key={app.packageName}>
-                      <td><strong>{app.label}</strong><div className="mono">{app.packageName}</div></td>
-                      <td>{CATEGORY_LABELS[app.category] ? t(CATEGORY_LABELS[app.category]) : t("Category {category}", { category: app.category })}</td>
-                      <td><input type="number" min={0} max={1440} disabled={app.blocked || app.alwaysAllowed}
-                        value={app.dailyMinutes ?? ""}
-                        onChange={(event) => updateApp(index, {
-                          dailyMinutes: event.target.value === "" ? null : Number(event.target.value)
-                        })} /></td>
-                      <td><input type="checkbox" checked={app.blocked}
-                        onChange={(event) => updateApp(index, {
-                          blocked: event.target.checked,
-                          alwaysAllowed: event.target.checked ? false : app.alwaysAllowed
-                        })} /></td>
-                      <td><input type="checkbox" checked={app.alwaysAllowed}
-                        onChange={(event) => updateApp(index, {
-                          alwaysAllowed: event.target.checked,
-                          blocked: event.target.checked ? false : app.blocked
-                        })} /></td>
-                      <td><button type="button" className="link-button" onClick={() => removeApp(index)}>{t("Remove")}</button></td>
-                    </tr>
+
+          {activeTab === "time" && (
+            <>
+              <div className="settings-group">
+                <div className="settings-heading">
+                  <h3>{t("General protections")}</h3>
+                  <p className="hint">{t("These settings control the overall protection, time zone and reminder behavior on the child device.")}</p>
+                </div>
+                <div className="form-grid">
+                  <label className="toggle wide">
+                    <input type="checkbox" checked={form.enabled}
+                      onChange={(event) => update("enabled", event.target.checked)} />
+                    {t("Enable Guard")}
+                  </label>
+                  <label>{t("Timezone (IANA)")}
+                    <input value={form.timezone} onChange={(event) => update("timezone", event.target.value)} />
+                  </label>
+                  <label>{t("Budget warning (minutes remaining)")}
+                    <input type="number" min={0} max={1440} value={form.budgetWarningMinutes}
+                      onChange={(event) => update("budgetWarningMinutes", Number(event.target.value))} />
+                  </label>
+                  <label>{t("Continuous-use reminder (minutes)")}
+                    <input type="number" min={0} max={1440} value={form.continuousUseReminderMinutes}
+                      onChange={(event) => update("continuousUseReminderMinutes", Number(event.target.value))} />
+                  </label>
+                  <p className="hint wide">
+                    {t("Set either reminder to 0 to disable it. The child device shows a local notification once per app per day when a daily budget is within the warning threshold, and once per foreground session when continuous use reaches the reminder threshold. Always-allowed, always-blocked and protected apps are never reminded.")}
+                  </p>
+                  <label className="toggle wide">
+                    <input type="checkbox" checked={form.launcherEnabled}
+                      onChange={(event) => update("launcherEnabled", event.target.checked)} />
+                    {t("Use Guard as the managed HOME launcher on the child device")}
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-group app-policy-editor">
+                <div className="settings-heading">
+                  <h3>{t("App policies")}</h3>
+                  <p className="hint">{t("Installed apps are reported by the device on sync. A blocked app stays blocked and cannot be temporarily allowed. An always-allowed app bypasses daily budgets, allowed windows and quiz gates.")}</p>
+                </div>
+                <div className="row-actions category-actions">
+                  <select value={selectedCategory} onChange={(event) => setSelectedCategory(Number(event.target.value))}>
+                    {Object.entries(CATEGORY_LABELS).map(([value, label]) =>
+                      <option key={value} value={value}>{t(label)}</option>)}
+                  </select>
+                  <input type="number" min={0} max={1440} value={categoryMinutes}
+                    onChange={(event) => setCategoryMinutes(Number(event.target.value))} />
+                  <button type="button" className="secondary" onClick={() => applyToCategory("minutes")}>{t("Apply minutes to category")}</button>
+                  <button type="button" className="secondary" onClick={() => applyToCategory("blocked")}>{t("Block category")}</button>
+                  <button type="button" className="secondary" onClick={() => applyToCategory("always")}>{t("Always allow category")}</button>
+                </div>
+                <div className="table-wrap"><table>
+                  <thead><tr><th>{t("App")}</th><th>{t("Category")}</th><th>{t("Daily minutes")}</th><th>{t("Blocked")}</th><th>{t("Always allowed")}</th><th /></tr></thead>
+                  <tbody>
+                    {form.apps.length === 0 ? <tr><td colSpan={6} className="empty">{t("No app policies yet. Add an installed app below.")}</td></tr> :
+                      form.apps.map((app, index) => (
+                        <tr key={app.packageName}>
+                          <td><strong>{app.label}</strong><div className="mono">{app.packageName}</div></td>
+                          <td>{CATEGORY_LABELS[app.category] ? t(CATEGORY_LABELS[app.category]) : t("Category {category}", { category: app.category })}</td>
+                          <td><input type="number" min={0} max={1440} disabled={app.blocked || app.alwaysAllowed}
+                            value={app.dailyMinutes ?? ""}
+                            onChange={(event) => updateApp(index, {
+                              dailyMinutes: event.target.value === "" ? null : Number(event.target.value)
+                            })} /></td>
+                          <td><input type="checkbox" checked={app.blocked}
+                            onChange={(event) => updateApp(index, {
+                              blocked: event.target.checked,
+                              alwaysAllowed: event.target.checked ? false : app.alwaysAllowed
+                            })} /></td>
+                          <td><input type="checkbox" checked={app.alwaysAllowed}
+                            onChange={(event) => updateApp(index, {
+                              alwaysAllowed: event.target.checked,
+                              blocked: event.target.checked ? false : app.blocked
+                            })} /></td>
+                          <td><button type="button" className="link-button" onClick={() => removeApp(index)}>{t("Remove")}</button></td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table></div>
+                <div className="row-actions">
+                  <select value="" onChange={(event) => addPackage(event.target.value)}>
+                    <option value="">{t("Add installed app...")}</option>
+                    {catalog.filter((app) => !form.apps.some((row) => row.packageName === app.package_name))
+                      .map((app) => <option key={app.package_name} value={app.package_name}>{app.label} ({app.package_name})</option>)}
+                  </select>
+                  <input placeholder={t("Advanced: enter package name")} value={newPackage}
+                    onChange={(event) => setNewPackage(event.target.value)} />
+                  <button type="button" className="secondary" onClick={() => addPackage(newPackage)}>{t("Add package")}</button>
+                </div>
+              </div>
+
+              <div className="settings-group schedule-editor">
+                <div className="settings-heading">
+                  <h3>{t("Allowed time windows")}</h3>
+                  <p className="hint">{t("A window allows an app only during the selected weekdays and time range. Apps without a daily budget or window cannot trigger a quiz.")}</p>
+                </div>
+                {scheduleEditor.error
+                  ? <p className="error">{t("The schedule JSON is invalid: {error}", { error: scheduleEditor.error })}</p>
+                  : scheduleEditor.rules.length === 0
+                    ? <p className="empty">{t("No allowed windows. Apps use only their daily budgets.")}</p>
+                    : scheduleEditor.rules.map((rule, index) => (
+                      <article className="question-card schedule-rule" key={rule.packageName + "-" + index}>
+                        <div className="form-grid">
+                          <label>{t("App")}
+                            <select value={rule.packageName}
+                              onChange={(event) => updateScheduleRule(index, { packageName: event.target.value })}>
+                              {!appOptions.some((option) => option.packageName === rule.packageName) &&
+                                <option value={rule.packageName}>{rule.packageName}</option>}
+                              {appOptions.map((option) => (
+                                <option key={option.packageName} value={option.packageName}>
+                                  {option.label} · {option.packageName}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>{t("Start time")}
+                            <input type="time" value={timeValue(rule.startMinute)}
+                              onChange={(event) => updateScheduleRule(index, { startMinute: minuteValue(event.target.value) })} />
+                          </label>
+                          <label>{t("Duration (minutes)")}
+                            <input type="number" min={1} max={1440} value={rule.durationMinutes}
+                              onChange={(event) => updateScheduleRule(index, { durationMinutes: Number(event.target.value) })} />
+                          </label>
+                          <div className="wide weekday-picker">
+                            <span className="field-label">{t("Days")}</span>
+                            <div className="weekday-options">
+                              {WEEKDAYS.map((day) => (
+                                <label className="weekday-option" key={day.value}>
+                                  <input type="checkbox"
+                                    checked={rule.days.split(",").map((entry) => entry.trim()).includes(String(day.value))}
+                                    onChange={() => updateScheduleRule(index, { days: toggleDay(rule.days, day.value) })} />
+                                  {t(day.label)}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <button type="button" className="link-button" onClick={() => removeScheduleRule(index)}>{t("Remove window")}</button>
+                      </article>
+                    ))}
+                <div className="row-actions">
+                  <button type="button" className="secondary" disabled={appOptions.length === 0 || Boolean(scheduleEditor.error)}
+                    onClick={addScheduleRule}>{t("Add allowed window")}</button>
+                  <span className="hint">{t("Select the app, weekdays, start time and duration. The raw JSON remains available under Advanced JSON.")}</span>
+                </div>
+                <details>
+                  <summary>{t("Advanced JSON")}</summary>
+                  <textarea rows={8} value={form.schedulesText}
+                    onChange={(event) => update("schedulesText", event.target.value)} />
+                </details>
+              </div>
+            </>
+          )}
+
+          {activeTab === "quiz" && (
+            <>
+              <div className="settings-group">
+                <div className="settings-heading">
+                  <h3>{t("Quiz rewards")}</h3>
+                  <p className="hint">{t("The quiz gate lets the child earn extra minutes after a limit is reached. The child device still enforces the signed policy, cooldown and daily attempt limit.")}</p>
+                </div>
+                <label className="toggle wide">
+                  <input type="checkbox" checked={form.quizGateEnabled}
+                    onChange={(event) => update("quizGateEnabled", event.target.checked)} />
+                  {t("Allow a signed quiz reward after the daily budget is exhausted")}
+                </label>
+                <div className="form-grid">
+                  <label>{t("Daily quiz attempts")}
+                    <input type="number" min={0} max={1000} value={form.maxAttemptsPerDay}
+                      onChange={(event) => update("maxAttemptsPerDay", Number(event.target.value))} />
+                  </label>
+                  <label>{t("Reward minutes")}
+                    <input type="number" min={0} max={1440} value={form.rewardMinutes}
+                      onChange={(event) => update("rewardMinutes", Number(event.target.value))} />
+                  </label>
+                  <label>{t("Wrong-answer cooldown (seconds)")}
+                    <input type="number" min={0} max={86400} value={form.cooldownSeconds}
+                      onChange={(event) => update("cooldownSeconds", Number(event.target.value))} />
+                  </label>
+                  <label>{t("Questions per reward attempt")}
+                    <input type="number" min={1} max={10} value={form.quizQuestionCount}
+                      onChange={(event) => update("quizQuestionCount", Number(event.target.value))} />
+                  </label>
+                  <label>{t("Subjects")}
+                    <input placeholder={t("mathematics, science")} value={form.quizSubjects}
+                      onChange={(event) => update("quizSubjects", event.target.value)} />
+                  </label>
+                  <label>{t("Grades (0 = unspecified)")}
+                    <input placeholder={t("3, 4, 5")} value={form.quizGrades}
+                      onChange={(event) => update("quizGrades", event.target.value)} />
+                  </label>
+                  <label>{t("Difficulties")}
+                    <input placeholder={t("easy, medium")} value={form.quizDifficulties}
+                      onChange={(event) => update("quizDifficulties", event.target.value)} />
+                  </label>
+                  <label>{t("Languages")}
+                    <input placeholder={t("en, zh-CN")} value={form.quizLanguages}
+                      onChange={(event) => update("quizLanguages", event.target.value)} />
+                  </label>
+                  <label>{t("Tags")}
+                    <input placeholder={t("arithmetic, fractions")} value={form.quizTags}
+                      onChange={(event) => update("quizTags", event.target.value)} />
+                  </label>
+                </div>
+                <p className="hint">{t("Blank filter lists mean no restriction. Filters match signed question metadata, so the child device must already trust and import a matching quiz pack.")}</p>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-heading">
+                  <h3>{t("Automatic quiz triggers")}</h3>
+                  <p className="hint">{t("Choose apps from the list reported by the child device. Trigger targets must also have a daily budget or allowed window. Always-blocked, system, dialer, HOME and Guard apps are rejected.")}</p>
+                </div>
+                <div className="row-actions">
+                  <button type="button" className="secondary" onClick={() => addTrigger("total_usage")}>{t("Add total-usage trigger")}</button>
+                  <button type="button" className="secondary" onClick={() => addTrigger("app_enter")}>{t("Add app-entry trigger")}</button>
+                  <button type="button" className="secondary" onClick={() => addTrigger("continuous_use")}>{t("Add continuous-use trigger")}</button>
+                  <button type="button" className="secondary" onClick={() => addTrigger("schedule_start")}>{t("Add schedule-start trigger")}</button>
+                </div>
+                {eligibleTriggerApps.length === 0 &&
+                  <p className="hint">{t("No eligible apps yet. First add an app with a daily budget or allowed window in Time & apps.")}</p>}
+                {form.quizTriggers.length === 0
+                  ? <p className="empty">{t("No automatic quiz triggers. The child can still open the quiz manually.")}</p>
+                  : form.quizTriggers.map((trigger, index) => (
+                    <article className="question-card trigger-card" key={index}>
+                      <div className="page-title">
+                        <strong>{t("Trigger {number}", { number: index + 1 })}</strong>
+                        <select value={trigger.type}
+                          onChange={(event) => updateTrigger(index, { type: event.target.value as QuizTriggerType })}>
+                          <option value="total_usage">{t("Total usage")}</option>
+                          <option value="app_enter">{t("App entry")}</option>
+                          <option value="continuous_use">{t("Continuous foreground use")}</option>
+                          <option value="schedule_start">{t("Schedule start")}</option>
+                        </select>
+                      </div>
+                      <p className="hint">{t(trigger.type === "total_usage"
+                        ? "Triggers when the selected apps reach the combined daily usage threshold."
+                        : trigger.type === "app_enter"
+                          ? "Triggers after the child opens one of the selected apps and the delay passes."
+                          : trigger.type === "continuous_use"
+                            ? "Triggers after one of the selected apps is used continuously for the threshold."
+                            : "Triggers when the selected app's allowed window starts.")}</p>
+                      <div className="form-grid">
+                        <div className="wide">
+                          <span className="field-label">{t("Target apps")}</span>
+                          <PackagePicker value={trigger.packages} options={eligibleTriggerApps}
+                            onChange={(value) => updateTrigger(index, { packages: value })}
+                            emptyHint={t("Apps appear here after the child device reports them and you set a daily budget or allowed window.")} />
+                        </div>
+                        {(trigger.type === "total_usage" || trigger.type === "continuous_use") && (
+                          <label>{t(trigger.type === "total_usage" ? "Combined usage threshold (minutes)" : "Continuous use threshold (minutes)")}
+                            <input type="number" min={1} max={1440} value={trigger.minutes}
+                              onChange={(event) => updateTrigger(index, { minutes: Number(event.target.value) })} />
+                          </label>
+                        )}
+                        {trigger.type === "app_enter" && (
+                          <label>{t("Delay after entry (seconds)")}
+                            <input type="number" min={0} max={3600} value={trigger.delaySeconds}
+                              onChange={(event) => updateTrigger(index, { delaySeconds: Number(event.target.value) })} />
+                          </label>
+                        )}
+                        {trigger.type === "schedule_start" && (
+                          <>
+                            <label>{t("Start time")}
+                              <input type="time" value={timeValue(trigger.startMinute)}
+                                onChange={(event) => updateTrigger(index, { startMinute: minuteValue(event.target.value) })} />
+                            </label>
+                            <div className="wide weekday-picker">
+                              <span className="field-label">{t("Days")}</span>
+                              <div className="weekday-options">
+                                {WEEKDAYS.map((day) => (
+                                  <label className="weekday-option" key={day.value}>
+                                    <input type="checkbox"
+                                      checked={trigger.days.split(",").map((entry) => entry.trim()).includes(String(day.value))}
+                                      onChange={() => updateTrigger(index, { days: toggleDay(trigger.days, day.value) })} />
+                                    {t(day.label)}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <button type="button" className="link-button" onClick={() => removeTrigger(index)}>{t("Remove trigger")}</button>
+                    </article>
                   ))}
-              </tbody>
-            </table></div>
-            <div className="row-actions">
-              <select value="" onChange={(event) => addPackage(event.target.value)}>
-                <option value="">{t("Add installed app...")}</option>
-                {catalog.filter((app) => !form.apps.some((row) => row.packageName === app.package_name))
-                  .map((app) => <option key={app.package_name} value={app.package_name}>{app.label} ({app.package_name})</option>)}
-              </select>
-              <input placeholder={t("or enter package name")} value={newPackage}
-                onChange={(event) => setNewPackage(event.target.value)} />
-              <button type="button" className="secondary" onClick={() => addPackage(newPackage)}>{t("Add package")}</button>
+              </div>
+            </>
+          )}
+
+          {activeTab === "care" && (
+            <div className="settings-group">
+              <div className="settings-heading">
+                <h3>{t("Task-page emergency contacts")}</h3>
+                <p className="hint">{t("These contacts appear on the child task page and open the system dialer after a tap. Guard never places a call or sends a message automatically. Leave the list empty if no trusted numbers should be shown.")}</p>
+              </div>
+              <div className="row-actions">
+                <button type="button" className="secondary" disabled={form.helpContacts.length >= 3}
+                  onClick={addHelpContact}>{t("Add contact")}</button>
+                <span className="hint">{t("{count} of 3 contacts", { count: form.helpContacts.length })}</span>
+              </div>
+              {form.helpContacts.length === 0
+                ? <p className="empty">{t("No task-page contacts configured.")}</p>
+                : form.helpContacts.map((contact, index) => (
+                  <article className="question-card" key={index}>
+                    <div className="form-grid">
+                      <label>{t("Label")}
+                        <input maxLength={40} placeholder={t("Parent, school office, trusted adult")}
+                          value={contact.label}
+                          onChange={(event) => updateHelpContact(index, { label: event.target.value })} />
+                      </label>
+                      <label>{t("Phone number")}
+                        <input maxLength={24} inputMode="tel" placeholder="+86 138 0000 0000"
+                          value={contact.phone}
+                          onChange={(event) => updateHelpContact(index, { phone: event.target.value })} />
+                      </label>
+                    </div>
+                    <button type="button" className="link-button"
+                      onClick={() => removeHelpContact(index)}>{t("Remove contact")}</button>
+                  </article>
+                ))}
             </div>
+          )}
+
+          <div className="publish-actions">
+            <button className="primary" disabled={saving}>{saving ? t("Signing and publishing...") : t("Publish signed policy")}</button>
+            <span className="hint">{t("Edits stay in this page until you publish. The child device applies the new signed revision on its next successful sync.")}</span>
           </div>
-          <label className="wide">{t("Allowed windows (JSON; day 1 = Monday, start in minutes)")}
-            <textarea rows={8} value={form.schedulesText}
-              onChange={(event) => update("schedulesText", event.target.value)} />
-          </label>
-        </div>
-        <div className="row-actions">
-          <button className="primary" disabled={saving}>{saving ? t("Signing and publishing...") : t("Publish signed policy")}</button>
-          <span className="hint">{t("The server replaces revision with a strictly increasing value.")}</span>
-        </div>
-        {envelope && <details className="wide">
-          <summary>{t("Signed envelope")}</summary>
-          <pre>{JSON.stringify(envelope, null, 2)}</pre>
-        </details>}
-        <details className="wide">
+        </form>
+      )}
+
+
+
+      <section className="card" hidden={activeTab !== "records"}>
+        <h2>{t("Signed policy history")}</h2>
+        <p className="muted">{t("Every published policy is signed and stored as a strictly increasing revision. Rolling back creates a new revision; it never moves the device backwards.")}</p>
+        {envelope
+          ? <details>
+            <summary>{t("Current signed envelope")}</summary>
+            <pre>{JSON.stringify(envelope, null, 2)}</pre>
+          </details>
+          : <p className="empty">{t("No policy has been published yet.")}</p>}
+        <details>
           <summary>{t("Revision history ({count})", { count: policyHistory.length })}</summary>
           {policyHistory.length === 0 ? <p className="empty">{t("No signed revisions yet.")}</p> :
             <ul className="call-list">
@@ -709,9 +1069,9 @@ export function DeviceDetailPage() {
             </ul>}
           <p className="hint">{t("Rollback validates the historical payload again and signs it as a new revision, so devices never move backwards.")}</p>
         </details>
-      </form>
+      </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "records"}>
         <h2>{t("Usage summary")}</h2>
         {usage.length === 0 ? <p className="empty">{t("No usage summaries uploaded yet.")}</p> :
           <div className="table-wrap"><table>
@@ -730,7 +1090,7 @@ export function DeviceDetailPage() {
           </table></div>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "care"}>
         <h2>{t("Child help requests")}</h2>
         <p className="muted">
           {t("These are requests the child explicitly sent from the task page. A request never changes time limits or unlocks an app. Replies are delivered on the child&apos;s next sync.")}
@@ -764,7 +1124,7 @@ export function DeviceDetailPage() {
         )}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "quiz"}>
         <div className="page-title">
           <div>
             <h2>{t("Parent-triggered quiz")}</h2>
@@ -800,7 +1160,7 @@ export function DeviceDetailPage() {
         </ul>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "quiz"}>
         <h2>{t("Quiz results")}</h2>
         <p className="muted">{t("Only answer metadata is uploaded: question ids, correctness, filters and the rewarded outcome. Free-text answers are not sent to the parent service.")}</p>
         {quizResults.length === 0 ? <p className="empty">{t("No quiz attempts have been uploaded yet.")}</p> :
@@ -843,7 +1203,7 @@ export function DeviceDetailPage() {
           </div>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "time"}>
         <div className="page-title">
           <div>
             <h2>{t("Temporary allowance")}</h2>
@@ -884,7 +1244,7 @@ export function DeviceDetailPage() {
         </ul>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "care"}>
         <div className="page-title">
           <div>
             <h2>{t("Authorized contact")}</h2>
@@ -920,7 +1280,7 @@ export function DeviceDetailPage() {
         </Suspense>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "care"}>
         <div className="page-title">
           <div>
             <h2>{t("Visible notices")}</h2>
@@ -946,7 +1306,7 @@ export function DeviceDetailPage() {
         {notices.some((item) => item.status === "acknowledged") && <p className="hint">{t("The latest acknowledged notice remains in this history until retention cleanup.")}</p>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "care"}>
         <div className="page-title">
           <div>
             <h2>{t("Consented screenshots")}</h2>
@@ -969,7 +1329,7 @@ export function DeviceDetailPage() {
         </div>}
       </section>
 
-      <section className="card">
+      <section className="card" hidden={activeTab !== "records"}>
         <h2>{t("Audit")}</h2>
         {audit.length === 0 ? <p className="empty">{t("No audit events.")}</p> : <ul className="audit-list">
           {audit.map((event) => (

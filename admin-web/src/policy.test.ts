@@ -3,6 +3,8 @@ import {
   emptyPolicy,
   formFromPolicyPayload,
   policyFromForm,
+  scheduleRulesFromText,
+  scheduleRulesToText,
   type PolicyFormState
 } from "./policy";
 
@@ -109,5 +111,42 @@ describe("policy form conversion", () => {
     const form = draft();
     form.helpContacts = [{ label: "Mum", phone: "not-a-phone" }];
     expect(() => policyFromForm(form)).toThrow(/dialable phone number/);
+  });
+});
+
+describe("schedule rule editing", () => {
+  it("round-trips the visual schedule editor and normalizes days", () => {
+    const text = scheduleRulesToText([
+      { packageName: "com.example.game", days: "5, 1, 1, 3", startMinute: 960, durationMinutes: 120 },
+      { packageName: "com.example.video", days: "6, 7", startMinute: 540, durationMinutes: 90 }
+    ]);
+
+    expect(JSON.parse(text)).toEqual({
+      "com.example.game": [{ days: [1, 3, 5], start_minute: 960, duration_minutes: 120 }],
+      "com.example.video": [{ days: [6, 7], start_minute: 540, duration_minutes: 90 }]
+    });
+    expect(scheduleRulesFromText(text)).toEqual([
+      { packageName: "com.example.game", days: "1, 3, 5", startMinute: 960, durationMinutes: 120 },
+      { packageName: "com.example.video", days: "6, 7", startMinute: 540, durationMinutes: 90 }
+    ]);
+  });
+
+  it("lets an unfinished weekday selection stay in the editor", () => {
+    expect(JSON.parse(scheduleRulesToText([
+      { packageName: "com.example.game", days: "", startMinute: 0, durationMinutes: 60 }
+    ]))).toEqual({
+      "com.example.game": [{ days: [], start_minute: 0, duration_minutes: 60 }]
+    });
+  });
+
+  it("rejects malformed schedules and impossible windows", () => {
+    expect(() => scheduleRulesFromText("[]")).toThrow(/JSON object/);
+    expect(() => scheduleRulesFromText('{"com.example.game": {}}')).toThrow(/must be a list/);
+    expect(() => scheduleRulesToText([
+      { packageName: "com.example.game", days: "1", startMinute: 1440, durationMinutes: 60 }
+    ])).toThrow(/start/);
+    expect(() => scheduleRulesToText([
+      { packageName: "com.example.game", days: "1", startMinute: 0, durationMinutes: 0 }
+    ])).toThrow(/duration/);
   });
 });

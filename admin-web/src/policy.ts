@@ -83,6 +83,58 @@ export const emptyPolicy: PolicyFormState = {
   schedulesText: "{\n  \"com.example.game\": [\n    { \"days\": [1, 2, 3, 4, 5], \"start_minute\": 960, \"duration_minutes\": 120 }\n  ]\n}"
 };
 
+
+export interface ScheduleRuleForm {
+  packageName: string;
+  days: string;
+  startMinute: number;
+  durationMinutes: number;
+}
+
+export function scheduleRulesFromText(text: string): ScheduleRuleForm[] {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Schedules must be a JSON object");
+  }
+  const rules: ScheduleRuleForm[] = [];
+  for (const [packageName, windows] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!Array.isArray(windows)) throw new Error(`Schedule for ${packageName} must be a list`);
+    for (const window of windows) {
+      const item = window as Record<string, unknown>;
+      const days = Array.isArray(item.days) ? item.days.map(Number) : [];
+      rules.push({
+        packageName,
+        days: days.join(", "),
+        startMinute: Number(item.start_minute ?? 0),
+        durationMinutes: Number(item.duration_minutes ?? 60)
+      });
+    }
+  }
+  return rules;
+}
+
+export function scheduleRulesToText(rules: ScheduleRuleForm[]): string {
+  const grouped: Record<string, Array<{ days: number[]; start_minute: number; duration_minutes: number }>> = {};
+  for (const rule of rules) {
+    const packageName = rule.packageName.trim();
+    if (!packageName) continue;
+    const days = rule.days.split(",").map((entry) => entry.trim()).filter(Boolean).map(Number)
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7);
+    if (!Number.isInteger(rule.startMinute) || rule.startMinute < 0 || rule.startMinute > 1439) {
+      throw new Error(`Schedule start for ${packageName} must be between 0 and 1439`);
+    }
+    if (!Number.isInteger(rule.durationMinutes) || rule.durationMinutes < 1 || rule.durationMinutes > 1440) {
+      throw new Error(`Schedule duration for ${packageName} must be between 1 and 1440 minutes`);
+    }
+    (grouped[packageName] ??= []).push({
+      days: [...new Set(days)].sort((left, right) => left - right),
+      start_minute: rule.startMinute,
+      duration_minutes: rule.durationMinutes
+    });
+  }
+  return JSON.stringify(grouped, null, 2);
+}
+
 export function formFromPolicyPayload(payload: string): PolicyFormState {
   const parsed = JSON.parse(payload) as Record<string, unknown>;
   const budgets = (parsed.daily_budgets ?? {}) as Record<string, number>;
