@@ -21,6 +21,14 @@ container serves the parent console on `18081` and proxies `/api/*` to the API
 container, keeping browser requests same-origin. The console is intended for
 LAN or routed VPN access and does not publish itself to the internet.
 
+## PWA installation and HTTPS
+
+Browsers only allow a parent console PWA to be installed from a secure
+context. On the plain-HTTP LAN address Edge offers "Create shortcut" but not
+"Install app". This is a browser requirement, not a Guard or network-provider
+dependency. Install the PWA from the public HTTPS deployment, or place the
+console behind any trusted HTTPS reverse proxy.
+
 ## Initial install
 
 1. Extract the latest `guard-*.zip` server distribution into `app/` so that
