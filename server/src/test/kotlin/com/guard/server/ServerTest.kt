@@ -721,6 +721,64 @@ class ServerTest {
     }
 
     @Test
+    fun dashboardAggregatesUsageQuizResultsAndCurrentApp() = testApplication {
+        val services = services()
+        application { guardModule(services) }
+        val parentToken = registerParent(client,
+            "dashboard-${java.util.UUID.randomUUID()}@example.test")
+        val (deviceToken, code, _) = registerDevice(client)
+        val deviceUuid = json.parseToJsonElement(claim(client, parentToken, code))
+            .jsonObject.getValue("id").jsonPrimitive.content
+        postJson(client, "/api/v1/device/confirm-pairing", "{}", deviceToken)
+        putJson(client, "/api/v1/devices/$deviceUuid/policy",
+            """{"policy":${policy()}}""", parentToken)
+        postJson(client, "/api/v1/device/apps", """{"apps":[
+            {"package_name":"com.example.game","label":"Game","category":0,"enabled":true},
+            {"package_name":"com.example.video","label":"Video","category":0,"enabled":true}
+        ]}""", deviceToken, HttpStatusCode.NoContent)
+
+        val day = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()
+        val now = System.currentTimeMillis()
+        postJson(client, "/api/v1/device/usage", """{
+            "day":"$day",
+            "app_minutes":{"com.example.game":18,"com.example.video":4},
+            "health":{"current_app":"com.example.game","current_app_observed_at":$now,
+                "device_owner":true,"usage_access":true,"policy_enabled":true}
+        }""", deviceToken, HttpStatusCode.NoContent)
+        postJson(client, "/api/v1/device/quiz-results", """{
+            "attempt_id":"dashboard-attempt-1","occurred_at":$now,
+            "target_package":"com.example.game","trigger_id":null,
+            "policy_revision":1,"quiz_version":1,"reward_granted":false,
+            "questions":[
+              {"question_id":"q1","correct":true,"type":"single_choice",
+               "subject":"mathematics","grade":3,"difficulty":"easy","language":"zh-cn","tags":["math"]},
+              {"question_id":"q2","correct":true,"type":"single_choice",
+               "subject":"mathematics","grade":3,"difficulty":"easy","language":"zh-cn","tags":["math"]},
+              {"question_id":"q3","correct":false,"type":"single_choice",
+               "subject":"english","grade":3,"difficulty":"easy","language":"zh-cn","tags":["word"]}
+            ]
+        }""", deviceToken, HttpStatusCode.NoContent)
+
+        val response = client.get("/api/v1/devices/$deviceUuid/dashboard?date=$day") {
+            header(HttpHeaders.Authorization, "Bearer $parentToken")
+        }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val dashboard = json.parseToJsonElement(response.bodyAsText()).jsonObject
+        assertEquals(22, dashboard.getValue("today_minutes").jsonPrimitive.int)
+        assertEquals(1, dashboard.getValue("quiz_attempts").jsonPrimitive.int)
+        assertEquals(3, dashboard.getValue("quiz_questions").jsonPrimitive.int)
+        assertEquals(2, dashboard.getValue("quiz_correct").jsonPrimitive.int)
+        assertEquals(67, dashboard.getValue("quiz_accuracy_percent").jsonPrimitive.int)
+        assertEquals("com.example.game", dashboard.getValue("current_app").jsonPrimitive.content)
+        assertEquals("Game", dashboard.getValue("current_app_label").jsonPrimitive.content)
+        val apps = dashboard.getValue("app_usage").jsonArray
+        assertEquals(2, apps.size)
+        assertEquals("Game", apps[0].jsonObject.getValue("label").jsonPrimitive.content)
+        assertEquals(82, apps[0].jsonObject.getValue("percent").jsonPrimitive.int)
+        assertEquals(7, dashboard.getValue("days").jsonArray.size)
+    }
+
+    @Test
     fun parentNoticesAreVisibleToTheChildAndAcknowledgedOnce() = testApplication {
         val services = services()
         application { guardModule(services) }

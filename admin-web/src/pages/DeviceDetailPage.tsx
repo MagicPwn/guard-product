@@ -5,6 +5,7 @@ import {
   type AuditEvent,
   type CallRequest,
   type Device,
+  type DeviceDashboard,
   type DeviceApp,
   type HelpRequest,
   type LiveKitCredentials,
@@ -36,7 +37,7 @@ import { errorText, useI18n } from "../i18n";
 const CallPanel = lazy(() => import("../components/CallPanel")
   .then((module) => ({ default: module.CallPanel })));
 
-type DeviceTab = "overview" | "time" | "quiz" | "care" | "records";
+type DeviceTab = "overview" | "time" | "quiz" | "care" | "records" | "advanced";
 
 const DEVICE_TABS: Array<{ id: DeviceTab; label: string; description: string }> = [
   {
@@ -63,6 +64,11 @@ const DEVICE_TABS: Array<{ id: DeviceTab; label: string; description: string }> 
     id: "records",
     label: "Records",
     description: "Review usage summaries, audit events, signed policy history and the current signed envelope."
+  },
+  {
+    id: "advanced",
+    label: "Advanced",
+    description: "Device identity, pairing maintenance and the destructive unpair action. Keep this area closed unless you are performing maintenance."
   }
 ];
 
@@ -155,6 +161,7 @@ export function DeviceDetailPage() {
   const [device, setDevice] = useState<Device | null>(null);
   const [envelope, setEnvelope] = useState<PolicyEnvelope | null>(null);
   const [policyHistory, setPolicyHistory] = useState<PolicyHistoryItem[]>([]);
+  const [dashboard, setDashboard] = useState<DeviceDashboard | null>(null);
   const [usage, setUsage] = useState<UsageReport[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [calls, setCalls] = useState<CallRequest[]>([]);
@@ -182,6 +189,7 @@ export function DeviceDetailPage() {
   const [categoryMinutes, setCategoryMinutes] = useState(60);
   const [grantPackage, setGrantPackage] = useState("");
   const [grantMinutes, setGrantMinutes] = useState(15);
+  const [revokePhrase, setRevokePhrase] = useState("");
 
   const appOptions = useMemo(() => {
     const options = new Map<string, PackageOption>();
@@ -212,11 +220,12 @@ export function DeviceDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const [nextDevice, nextPolicy, nextHistory, nextUsage, nextAudit, nextCalls, nextApps, nextGrants,
+      const [nextDevice, nextPolicy, nextHistory, nextDashboard, nextUsage, nextAudit, nextCalls, nextApps, nextGrants,
         nextScreenshots, nextQuizResults, nextNotices, nextQuizTriggers, nextHelpRequests] = await Promise.all([
         api.getDevice(id),
         api.latestPolicy(id).catch(() => null),
         api.policyHistory(id).catch(() => []),
+        api.dashboard(id).catch(() => null),
         api.usage(id).catch(() => []),
         api.audit(id).catch(() => []),
         api.listCalls(id).catch(() => []),
@@ -231,6 +240,7 @@ export function DeviceDetailPage() {
       setDevice(nextDevice);
       setEnvelope(nextPolicy);
       setPolicyHistory(nextHistory);
+      setDashboard(nextDashboard);
       const lookup = new Map(nextApps.map((app) => [app.package_name, app]));
       if (nextPolicy) {
         const nextForm = formFromPolicyPayload(nextPolicy.payload);
@@ -616,6 +626,8 @@ export function DeviceDetailPage() {
   if (loading) return <p>{t("Loading device...")}</p>;
   if (!device) return <p className="error">{error ?? t("Device not found")}</p>;
 
+  const maxDayMinutes = Math.max(1, ...(dashboard?.days.map((item) => item.minutes) ?? [0]));
+
   return (
     <section className="detail-layout">
       <div className="page-title">
@@ -628,7 +640,6 @@ export function DeviceDetailPage() {
           <span className={`badge ${device.revoked ? "danger" : device.confirmed ? "ok" : "warn"}`}>
             {device.revoked ? t("Revoked") : device.confirmed ? t("Protected") : t("Awaiting confirmation")}
           </span>
-          {!device.revoked && <button className="danger-button" onClick={() => void revoke()}>{t("Revoke")}</button>}
         </div>
       </div>
 
@@ -683,7 +694,78 @@ export function DeviceDetailPage() {
                 : t("No data yet")}</strong>
               <p className="hint">{usage[0] ? usage[0].day : t("The child device uploads usage after it syncs.")}</p>
             </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Today's screen time")}</span>
+              <strong>{dashboard ? t("{minutes} min", { minutes: dashboard.today_minutes }) : t("No data yet")}</strong>
+              <p className="hint">{t("This week: {minutes} min", { minutes: dashboard?.week_minutes ?? 0 })}</p>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Quiz accuracy")}</span>
+              <strong>{dashboard && dashboard.quiz_questions > 0
+                ? t("{percent}%", { percent: dashboard.quiz_accuracy_percent })
+                : t("No attempts yet")}</strong>
+              <p className="hint">{t("{correct} correct out of {questions} questions", {
+                correct: dashboard?.quiz_correct ?? 0,
+                questions: dashboard?.quiz_questions ?? 0
+              })}</p>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">{t("Current app")}</span>
+              <strong>{dashboard?.current_app_label ?? t("No active app reported")}</strong>
+              <p className="hint">{dashboard?.current_app_observed_at
+                ? t("Observed at {time} during the latest sync. The value can lag by up to one sync interval.", {
+                    time: formatTime(dashboard.current_app_observed_at)
+                  })
+                : t("The child device reports the foreground app during its automatic sync.")}</p>
+            </article>
           </div>
+
+          <section className="card dashboard-card">
+            <div className="page-title">
+              <div>
+                <h2>{t("App usage today")}</h2>
+                <p className="muted">{t("Minutes are reported by Android usage access. Only app totals are collected, not messages or keystrokes.")}</p>
+              </div>
+              <span className="badge neutral">{dashboard?.day ?? t("No report")}</span>
+            </div>
+            {!dashboard?.app_usage.length
+              ? <p className="empty">{t("No app usage has been uploaded today. The child device uploads it automatically after its next sync.")}</p>
+              : <ul className="usage-bars">
+                  {dashboard.app_usage.map((app) => (
+                    <li key={app.package_name}>
+                      <div className="usage-bar-heading">
+                        <span><strong>{app.label}</strong><span className="mono">{app.package_name}</span></span>
+                        <span>{t("{minutes} min", { minutes: app.minutes })} {" · "}{app.percent}%</span>
+                      </div>
+                      <div className="usage-track" aria-hidden="true">
+                        <span style={{ width: `${Math.max(2, app.percent)}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>}
+          </section>
+
+          <section className="card dashboard-card">
+            <div className="page-title">
+              <div>
+                <h2>{t("Last 7 days")}</h2>
+                <p className="muted">{t("Daily screen time and quiz activity. Today is the rightmost bar.")}</p>
+              </div>
+              <span className="badge ok">{t("{attempts} quizzes today", { attempts: dashboard?.quiz_attempts ?? 0 })}</span>
+            </div>
+            <div className="week-chart">
+              {(dashboard?.days ?? []).map((item) => (
+                <div className="week-chart-item" key={item.day}>
+                  <div className="week-chart-bar" title={t("{minutes} min", { minutes: item.minutes })}>
+                    <span style={{ height: `${Math.max(4, (item.minutes / maxDayMinutes) * 100)}%` }} />
+                  </div>
+                  <strong>{item.minutes}</strong>
+                  <span>{item.day.slice(5)}</span>
+                  <small>{t("{count} quizzes", { count: item.quiz_attempts })}</small>
+                </div>
+              ))}
+            </div>
+          </section>
           <section className="card setup-guide">
             <h2>{t("Recommended setup order")}</h2>
             <ol className="setup-list">
@@ -1340,6 +1422,46 @@ export function DeviceDetailPage() {
             </li>
           ))}
         </ul>}
+      </section>
+
+      <section className="card" hidden={activeTab !== "advanced"}>
+        <div className="page-title">
+          <div>
+            <h2>{t("Advanced device maintenance")}</h2>
+            <p className="muted">{t("These details are read-only. The destructive action below is separated from daily settings to prevent accidental taps.")}</p>
+          </div>
+        </div>
+        <dl className="key-details">
+          <dt>{t("Device ID")}</dt><dd className="mono">{device.device_id}</dd>
+          <dt>{t("Platform")}</dt><dd>{device.platform}</dd>
+          <dt>{t("Paired at")}</dt><dd>{formatDate(device.created_at)}</dd>
+          <dt>{t("Last seen")}</dt><dd>{device.last_seen_at ? formatDate(device.last_seen_at) : t("Never")}</dd>
+          <dt>{t("Signed policy revision")}</dt><dd>{dashboard?.policy_revision ?? envelope?.revision ?? 0}</dd>
+        </dl>
+
+        <section className="danger-card advanced-danger">
+          <h3>{t("Danger zone")}</h3>
+          {device.revoked ? <p>{t("This device is already unpaired. Its token has been revoked.")}</p> : (
+            <>
+              <p>{t("Unpairing revokes this device token immediately. The child device keeps its last verified local policy until it is paired again or reset.")}</p>
+              <p>{t("This does not delete usage history or quiz results. Use Account deletion if you need to erase all data.")}</p>
+              <label>{t("Type the device name exactly to confirm: {name}", { name: device.name })}
+                <input value={revokePhrase} onChange={(event) => setRevokePhrase(event.target.value)}
+                  placeholder={device.name} autoComplete="off" />
+              </label>
+              <div className="row-actions">
+                <button type="button" className="danger-button"
+                  disabled={revokePhrase.trim() !== device.name}
+                  onClick={() => void revoke()}>
+                  {t("Unpair this device permanently")}
+                </button>
+                <button type="button" className="secondary" onClick={() => setRevokePhrase("")}>
+                  {t("Clear confirmation")}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
       </section>
     </section>
   );

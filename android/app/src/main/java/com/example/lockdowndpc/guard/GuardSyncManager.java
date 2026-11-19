@@ -325,6 +325,10 @@ public final class GuardSyncManager {
             health.put("last_enforced_at", GuardPolicyStore.lastEnforcedAt(context));
             health.put("boot_count", GuardRewardStore.bootCount(context));
             health.put("suspended_packages", GuardPolicyStore.readSuspendedPackages(context).size());
+            String currentApp = UsageLedger.foregroundPackage(context,
+                    GuardPolicyEnforcer.protectedPackages(context));
+            health.put("current_app", currentApp == null ? "" : currentApp);
+            health.put("current_app_observed_at", System.currentTimeMillis());
         } catch (JSONException exception) {
             throw new IOException("Unable to encode device health", exception);
         }

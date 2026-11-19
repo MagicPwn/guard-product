@@ -30,8 +30,10 @@ import java.security.KeyFactory
 import java.security.interfaces.ECPublicKey
 import java.security.spec.X509EncodedKeySpec
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Base64
+import kotlin.math.roundToInt
 
 fun Application.configureRoutes(services: Services) {
     routing {
@@ -343,6 +345,87 @@ fun Application.configureRoutes(services: Services) {
                 services.audit.append(device.id, "parent:$parentId", "policy.rolled_back",
                     "source=${source.revision}:revision=${row.revision}")
                 call.respond(PolicyEnvelope(1, row.keyId, row.revision, row.payload, row.signature))
+            }
+            get("/{id}/dashboard") {
+                val parentId = call.requireParent(services)
+                val device = call.ownedDevice(services, parentId)
+                val zone = dashboardZone(services, device)
+                val day = parseDate(call.request.queryParameters["date"], LocalDate.now(zone))
+                if (day.isAfter(LocalDate.now(zone))) badRequest("date must not be in the future")
+                val from = day.minusDays(6)
+                val labels = services.apps.list(device.id)
+                    .associate { it.packageName to it.label }
+                val usageRows = services.usage.list(device.id, from, day)
+                val usageByDay = usageRows.associateBy { it.day }
+                val todayUsage = usageRows.firstOrNull { it.day == day.toString() }
+                    ?.let { services.json.decodeFromString<StoredUsage>(it.payload) }
+                val todayMinutes = todayUsage?.appMinutes?.values?.sum() ?: 0
+                val appUsage = (todayUsage?.appMinutes ?: emptyMap())
+                    .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }
+                        .thenBy { labels[it.key] ?: it.key })
+                    .map { entry ->
+                        DashboardAppUsageView(
+                            entry.key,
+                            labels[entry.key] ?: entry.key,
+                            entry.value,
+                            if (todayMinutes == 0) 0
+                            else (entry.value * 100.0 / todayMinutes).roundToInt()
+                        )
+                    }
+                val quizRows = services.quizResults.listBetween(
+                    device.id,
+                    from.atStartOfDay(zone).toInstant(),
+                    day.plusDays(1).atStartOfDay(zone).toInstant()
+                )
+                val quizByDay = quizRows.groupBy { it.occurredAt.atZone(zone).toLocalDate() }
+                val todayQuiz = quizByDay[day].orEmpty()
+                val quizQuestions = todayQuiz.sumOf { it.questionCount }
+                val quizCorrect = todayQuiz.sumOf { it.correctCount }
+                val latestUsage = usageRows.maxByOrNull { it.createdAt }
+                val latestHealth = latestUsage
+                    ?.let { services.json.decodeFromString<StoredUsage>(it.payload).health }
+                    ?: JsonObject(emptyMap())
+                val observedAt = (latestHealth["current_app_observed_at"] as? JsonPrimitive)
+                    ?.contentOrNull?.toLongOrNull()
+                val currentApp = (latestHealth["current_app"] as? JsonPrimitive)
+                    ?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?.takeIf { observedAt == null || Instant.now().toEpochMilli() - observedAt <= 60 * 60 * 1000L }
+                val days = (0..6).map { offset ->
+                    val value = day.minusDays((6 - offset).toLong())
+                    val stored = usageByDay[value.toString()]?.payload
+                        ?.let { services.json.decodeFromString<StoredUsage>(it) }
+                    val quizzes = quizByDay[value].orEmpty()
+                    DashboardDayView(
+                        value.toString(),
+                        stored?.appMinutes?.values?.sum() ?: 0,
+                        quizzes.size,
+                        quizzes.sumOf { it.questionCount },
+                        quizzes.sumOf { it.correctCount }
+                    )
+                }
+                call.respond(DeviceDashboardView(
+                    day = day.toString(),
+                    todayMinutes = todayMinutes,
+                    weekMinutes = usageRows.sumOf { row ->
+                        services.json.decodeFromString<StoredUsage>(row.payload)
+                            .appMinutes.values.sum()
+                    },
+                    appUsage = appUsage,
+                    quizAttempts = todayQuiz.size,
+                    quizQuestions = quizQuestions,
+                    quizCorrect = quizCorrect,
+                    quizAccuracyPercent = if (quizQuestions == 0) 0
+                        else (quizCorrect * 100.0 / quizQuestions).roundToInt(),
+                    rewardsGranted = todayQuiz.count { it.rewardGranted },
+                    currentApp = currentApp,
+                    currentAppLabel = currentApp?.let { labels[it] ?: it },
+                    currentAppObservedAt = observedAt?.let { Instant.ofEpochMilli(it).toString() },
+                    lastUsageAt = latestUsage?.createdAt?.toString(),
+                    lastSeenAt = device.lastSeenAt?.toString(),
+                    policyRevision = services.policies.latest(device.id)?.revision ?: 0,
+                    health = latestHealth,
+                    days = days
+                ))
             }
             get("/{id}/usage") {
                 val parentId = call.requireParent(services)
@@ -1107,6 +1190,21 @@ fun parseDate(value: String?, fallback: LocalDate): LocalDate =
     } catch (exception: Exception) {
         badRequest("Date parameters must use ISO-8601 dates")
     }
+
+fun dashboardZone(services: Services, device: DeviceRow): ZoneId {
+    val payload = services.policies.latest(device.id)?.payload ?: return ZoneOffset.UTC
+    val timezone = try {
+        (services.json.parseToJsonElement(payload).jsonObject["timezone"] as? JsonPrimitive)
+            ?.contentOrNull
+    } catch (exception: Exception) {
+        null
+    }
+    return try {
+        if (timezone.isNullOrBlank()) ZoneOffset.UTC else ZoneId.of(timezone)
+    } catch (exception: Exception) {
+        ZoneOffset.UTC
+    }
+}
 
 fun validateDevicePublicKey(base64: String) {
     try {

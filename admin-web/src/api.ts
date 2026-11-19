@@ -53,6 +53,41 @@ export interface UsageReport {
   received_at: string;
 }
 
+export interface DashboardAppUsage {
+  package_name: string;
+  label: string;
+  minutes: number;
+  percent: number;
+}
+
+export interface DashboardDay {
+  day: string;
+  minutes: number;
+  quiz_attempts: number;
+  quiz_questions: number;
+  quiz_correct: number;
+}
+
+export interface DeviceDashboard {
+  day: string;
+  today_minutes: number;
+  week_minutes: number;
+  app_usage: DashboardAppUsage[];
+  quiz_attempts: number;
+  quiz_questions: number;
+  quiz_correct: number;
+  quiz_accuracy_percent: number;
+  rewards_granted: number;
+  current_app: string | null;
+  current_app_label: string | null;
+  current_app_observed_at: string | null;
+  last_usage_at: string | null;
+  last_seen_at: string | null;
+  policy_revision: number;
+  health: Record<string, unknown>;
+  days: DashboardDay[];
+}
+
 export interface AuditEvent {
   id: string;
   actor: string;
@@ -356,6 +391,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ policy })
     }),
+  dashboard: (id: string, date?: string) => {
+    const query = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request<DeviceDashboard>(`/devices/${encodeURIComponent(id)}/dashboard${query}`);
+  },
   usage: (id: string, from?: string, to?: string) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);

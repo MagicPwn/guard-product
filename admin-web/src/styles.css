@@ -150,6 +150,27 @@ th { color: #64716b; font-size: 0.78rem; text-transform: uppercase; letter-spaci
 .summary-ok { color: #176b52; }
 .summary-warn { color: #8a5b00; }
 .summary-card .hint { margin-top: auto; padding-top: 0.25rem; }
+.dashboard-card { margin: 0; }
+.usage-bars { list-style: none; padding: 0; margin: 0.8rem 0 0; display: grid; gap: 0.8rem; }
+.usage-bars li { display: grid; gap: 0.32rem; }
+.usage-bar-heading { display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; flex-wrap: wrap; }
+.usage-bar-heading > span:first-child { display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
+.usage-track { height: 0.55rem; border-radius: 999px; background: #e8efe9; overflow: hidden; }
+.usage-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2f8a6d, #64b48e); }
+.week-chart {
+  display: grid; grid-template-columns: repeat(7, minmax(2.8rem, 1fr)); gap: 0.55rem;
+  align-items: end; min-height: 12rem; margin-top: 0.8rem;
+}
+.week-chart-item { display: grid; justify-items: center; gap: 0.25rem; font-size: 0.78rem; }
+.week-chart-bar {
+  width: 100%; height: 8.5rem; display: flex; align-items: end;
+  background: #eef3ee; border-radius: 9px; overflow: hidden;
+}
+.week-chart-bar span { display: block; width: 100%; border-radius: 9px 9px 0 0; background: #2f8a6d; }
+.week-chart-item small { color: #64716b; white-space: nowrap; }
+.advanced-danger { margin-top: 1.2rem; }
+.advanced-danger h3 { margin: 0 0 0.4rem; color: #8a2621; }
+.advanced-danger .row-actions { margin-top: 0.8rem; }
 .setup-guide { margin: 0; }
 .setup-list { margin: 0.5rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.65rem; }
 .setup-list p { color: #5b6b63; margin: 0.15rem 0 0; }

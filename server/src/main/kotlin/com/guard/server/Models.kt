@@ -129,6 +129,44 @@ data class UsageReportView(
 )
 
 @Serializable
+data class DashboardAppUsageView(
+    @kotlinx.serialization.SerialName("package_name") val packageName: String,
+    val label: String,
+    val minutes: Int,
+    val percent: Int
+)
+
+@Serializable
+data class DashboardDayView(
+    val day: String,
+    val minutes: Int,
+    @kotlinx.serialization.SerialName("quiz_attempts") val quizAttempts: Int,
+    @kotlinx.serialization.SerialName("quiz_questions") val quizQuestions: Int,
+    @kotlinx.serialization.SerialName("quiz_correct") val quizCorrect: Int
+)
+
+@Serializable
+data class DeviceDashboardView(
+    val day: String,
+    @kotlinx.serialization.SerialName("today_minutes") val todayMinutes: Int,
+    @kotlinx.serialization.SerialName("week_minutes") val weekMinutes: Int,
+    @kotlinx.serialization.SerialName("app_usage") val appUsage: List<DashboardAppUsageView>,
+    @kotlinx.serialization.SerialName("quiz_attempts") val quizAttempts: Int,
+    @kotlinx.serialization.SerialName("quiz_questions") val quizQuestions: Int,
+    @kotlinx.serialization.SerialName("quiz_correct") val quizCorrect: Int,
+    @kotlinx.serialization.SerialName("quiz_accuracy_percent") val quizAccuracyPercent: Int,
+    @kotlinx.serialization.SerialName("rewards_granted") val rewardsGranted: Int,
+    @kotlinx.serialization.SerialName("current_app") val currentApp: String?,
+    @kotlinx.serialization.SerialName("current_app_label") val currentAppLabel: String?,
+    @kotlinx.serialization.SerialName("current_app_observed_at") val currentAppObservedAt: String?,
+    @kotlinx.serialization.SerialName("last_usage_at") val lastUsageAt: String?,
+    @kotlinx.serialization.SerialName("last_seen_at") val lastSeenAt: String?,
+    @kotlinx.serialization.SerialName("policy_revision") val policyRevision: Long,
+    val health: JsonObject,
+    val days: List<DashboardDayView>
+)
+
+@Serializable
 data class DeviceAppPayload(
     @kotlinx.serialization.SerialName("package_name") val packageName: String,
     val label: String,

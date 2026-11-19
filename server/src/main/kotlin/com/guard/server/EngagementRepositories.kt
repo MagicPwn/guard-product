@@ -85,6 +85,23 @@ class QuizResultRepository(private val database: Database) {
         }
     }
 
+    fun listBetween(deviceId: String, from: Instant, to: Instant,
+            limit: Int = 5_000): List<QuizResultRow> = database.withConnection { connection ->
+        connection.prepareStatement(
+            """SELECT * FROM quiz_attempt_results
+               WHERE device_id = ? AND occurred_at >= ? AND occurred_at < ?
+               ORDER BY occurred_at ASC LIMIT ?"""
+        ).use { statement ->
+            statement.setString(1, deviceId)
+            statement.setTimestamp(2, Timestamp.from(from))
+            statement.setTimestamp(3, Timestamp.from(to))
+            statement.setInt(4, limit.coerceIn(1, 10_000))
+            statement.executeQuery().use { rows ->
+                buildList { while (rows.next()) add(read(rows)) }
+            }
+        }
+    }
+
     private fun read(rows: ResultSet) = QuizResultRow(
         rows.getString("id"), rows.getString("device_id"), rows.getString("attempt_id"),
         readInstant(rows, "occurred_at")!!, rows.getString("target_package"),
