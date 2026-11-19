@@ -60,6 +60,35 @@ public final class LockdownPackages {
     );
 
     /**
+     * Standalone web entry points whose HTTP/HTTPS handlers must not remain
+     * launchable while browsing is blocked.
+     *
+     * <p>Every package here is already covered by {@link #ALWAYS_BLOCKED} or
+     * {@link #KNOWN_BROWSER_AND_SOCIAL}. This narrower catalogue is used only
+     * to audit whether a web link can still reach an external browser.
+     */
+    public static final Set<String> BROWSER_PACKAGES = immutableSet(
+            "com.android.chrome",
+            "com.sec.android.app.sbrowser",
+            "com.google.android.googlequicksearchbox",
+            "com.android.browser",
+            "com.mi.globalbrowser",
+            "com.heytap.browser",
+            "com.oppo.browser",
+            "com.vivo.browser",
+            "com.huawei.browser",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.brave.browser",
+            "com.duckduckgo.mobile.android",
+            "com.vivaldi.browser",
+            "com.kiwibrowser.browser",
+            "com.UCMobile.intl"
+    );
+
+    /**
      * Packages Device Guard must never hide, suspend or take over.
      *
      * <p>Device Guard does not operate a "total system allowlist". Hiding every

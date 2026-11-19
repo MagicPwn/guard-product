@@ -4,10 +4,10 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.Signature;
 import android.content.pm.SigningInfo;
 import android.net.Uri;
@@ -68,16 +68,16 @@ public final class LockdownPolicyController {
             errors.add(PlayStoreCompatibility.INSTALL_LOCK_UNVERIFIED_ERROR);
         }
         Set<String> trustedManagement = resolveTrustedManagementPackages(context, errors);
-        // Kiosk reconciles before the link handlers: turning kiosk off clears
-        // every persistent preferred activity of this package, and
-        // configureBlockedBrowser below re-registers the managed-filtering ones.
+        // Kiosk reconciles before the browser controls: turning kiosk off
+        // clears every persistent preferred activity owned by this package.
         KioskController.reconcile(context, dpm, admin, errors);
         setBlockedBrowserComponentEnabled(context, true, errors);
-        configureBlockedBrowser(context, dpm, admin, errors);
         protectManagementApps(context, dpm, admin, trustedManagement, errors);
+        suspendUnhiddenBlockedBrowsers(context, dpm, admin, errors);
         int[] packageCounts = applyPackagePolicy(
                 context, dpm, admin, trustedManagement, playCompatibility, errors);
         suspendBrowserBackedWebViewIfNeeded(context, dpm, admin, errors);
+        verifyBlockedBrowserHandling(context, dpm, admin, errors);
         boolean verified = errors.isEmpty();
         if (verified) {
             AllowedAppsStore.markApplySucceeded(context);
@@ -163,7 +163,7 @@ public final class LockdownPolicyController {
                 errors.add("package-release:" + packageName + ":" + exception.getClass().getSimpleName());
             }
         }
-        unsuspendBrowserProviders(dpm, admin, errors);
+        releaseBrowserSuspensions(dpm, admin, errors);
         protectManagementApps(context, dpm, admin, resolveTrustedManagementPackages(context, errors), errors);
         // Pausing managed filtering is not a way out of kiosk: an active kiosk
         // keeps its lock task allowlist and re-registers the HOME preference that
@@ -359,54 +359,136 @@ public final class LockdownPolicyController {
         SystemPolicyStore.saveReport(context, report);
     }
 
-    private static void configureBlockedBrowser(
+    /**
+     * Suspends browser packages whose hide request did not produce a readable
+     * hidden state. Several OEM builds accept setApplicationHidden() and still
+     * leave the package launchable; suspension is an independent device-owner
+     * control that the resolver honours.
+     */
+    private static void suspendUnhiddenBlockedBrowsers(
             Context context,
             DevicePolicyManager dpm,
             ComponentName admin,
             List<String> errors
     ) {
-        ComponentName blockedActivity = new ComponentName(admin.getPackageName(), BlockedBrowserActivity.class.getName());
-        // Android can apply this policy asynchronously. Register both filters
-        // first, then verify their effective resolution with a short bounded
-        // retry. A physical Android 13 OEM build also delayed resolver state
-        // after enabling this component, so the retry applies to every supported
-        // release rather than relying on the platform version. The first probe
-        // still returns immediately on the normal path. PolicyUpdateAuditReceiver
-        // remains the authoritative backstop for a later conflicting-admin result.
-        for (String scheme : new String[]{"http", "https"}) {
-            try {
-                IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
-                filter.addCategory(Intent.CATEGORY_DEFAULT);
-                filter.addCategory(Intent.CATEGORY_BROWSABLE);
-                filter.addDataScheme(scheme);
-                dpm.addPersistentPreferredActivity(admin, filter, blockedActivity);
-            } catch (RuntimeException exception) {
-                errors.add("link-filter:" + scheme + ":" + exception.getClass().getSimpleName());
+        String webViewProvider = resolveWebViewProvider(context.getPackageManager());
+        for (String packageName : LockdownPackages.BROWSER_PACKAGES) {
+            if (packageName.equals(context.getPackageName())
+                    || packageName.equals(webViewProvider)
+                    || !isInstalled(context.getPackageManager(), packageName)) {
+                continue;
             }
-        }
-        for (String scheme : new String[]{"http", "https"}) {
             try {
-                Intent probe = new Intent(Intent.ACTION_VIEW, Uri.parse(scheme + "://policy-check.invalid"));
-                probe.addCategory(Intent.CATEGORY_BROWSABLE);
-                if (!eventuallyResolvesTo(context.getPackageManager(), probe, blockedActivity)) {
-                    errors.add("link-filter-target-unverified:" + scheme);
+                if (dpm.isApplicationHidden(admin, packageName)
+                        || dpm.isPackageSuspended(admin, packageName)) {
+                    continue;
                 }
+                String[] failed = dpm.setPackagesSuspended(
+                        admin, new String[]{packageName}, true);
+                if (failed.length > 0) {
+                    errors.add("browser-suspension-failed:" + packageName);
+                } else if (!dpm.isPackageSuspended(admin, packageName)) {
+                    errors.add("browser-suspension-unverified:" + packageName);
+                }
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // The catalogue is shared by many OEMs; this one is absent.
             } catch (RuntimeException exception) {
-                errors.add("link-filter:" + scheme + ":" + exception.getClass().getSimpleName());
+                errors.add("browser-suspension:" + packageName + ":"
+                        + exception.getClass().getSimpleName());
             }
         }
     }
 
-    private static boolean eventuallyResolvesTo(
-            PackageManager pm,
-            Intent intent,
-            ComponentName expected
+    /**
+     * Verifies the behaviour that matters: every known browser still named by
+     * the HTTP or HTTPS resolver is hidden or suspended.
+     *
+     * <p>Android documents that browser invocations are not configurable with
+     * addPersistentPreferredActivity(). The previous probe asserted that
+     * unsupported policy instead of checking the browser controls, so a
+     * successful block was still reported as protection failure.
+     */
+    private static void verifyBlockedBrowserHandling(
+            Context context,
+            DevicePolicyManager dpm,
+            ComponentName admin,
+            List<String> errors
     ) {
-        return BoundedVerificationRetry.verify(
-                LINK_HANDLER_VERIFY_ATTEMPTS,
-                () -> expected.equals(resolveActivity(pm, intent)),
-                () -> SystemClock.sleep(LINK_HANDLER_VERIFY_RETRY_DELAY_MS)
-        );
+        PackageManager pm = context.getPackageManager();
+        Set<String> containedBrowsers = containedBrowserPackages(dpm, admin);
+        for (String scheme : new String[]{"http", "https"}) {
+            Intent probe = new Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(scheme + "://policy-check.invalid")
+            );
+            probe.addCategory(Intent.CATEGORY_DEFAULT);
+            probe.addCategory(Intent.CATEGORY_BROWSABLE);
+            String[] lastFailure = new String[1];
+            try {
+                boolean verified = BoundedVerificationRetry.verify(
+                        LINK_HANDLER_VERIFY_ATTEMPTS,
+                        () -> {
+                            lastFailure[0] = BrowserLinkBlocking.evaluate(
+                                    scheme,
+                                    queryActivityPackages(pm, probe),
+                                    LockdownPackages.BROWSER_PACKAGES,
+                                    containedBrowsers
+                            );
+                            return lastFailure[0] == null;
+                        },
+                        () -> SystemClock.sleep(LINK_HANDLER_VERIFY_RETRY_DELAY_MS)
+                );
+                if (!verified) {
+                    errors.add(lastFailure[0] == null
+                            ? BrowserLinkBlocking.TARGET_UNVERIFIED_ERROR + scheme
+                            : lastFailure[0]);
+                }
+            } catch (RuntimeException exception) {
+                errors.add("link-filter:" + scheme + ":"
+                        + exception.getClass().getSimpleName());
+            }
+        }
+    }
+
+    private static Set<String> containedBrowserPackages(
+            DevicePolicyManager dpm,
+            ComponentName admin
+    ) {
+        Set<String> contained = new LinkedHashSet<>();
+        for (String packageName : LockdownPackages.BROWSER_PACKAGES) {
+            try {
+                if (dpm.isApplicationHidden(admin, packageName)
+                        || dpm.isPackageSuspended(admin, packageName)) {
+                    contained.add(packageName);
+                }
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // An absent package cannot handle a link.
+            }
+        }
+        return contained;
+    }
+
+    private static List<String> queryActivityPackages(PackageManager pm, Intent intent) {
+        List<ResolveInfo> resolved;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            resolved = pm.queryIntentActivities(
+                    intent,
+                    PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY)
+            );
+        } else {
+            //noinspection deprecation
+            resolved = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+        }
+        ArrayList<String> packages = new ArrayList<>();
+        if (resolved == null) {
+            return packages;
+        }
+        for (ResolveInfo info : resolved) {
+            if (info.activityInfo != null) {
+                packages.add(info.activityInfo.packageName);
+            }
+        }
+        return packages;
     }
 
     private static void setBlockedBrowserComponentEnabled(
@@ -778,20 +860,28 @@ public final class LockdownPolicyController {
 
             try {
                 boolean wasHidden = dpm.isApplicationHidden(admin, packageName);
+                boolean wasSuspended = dpm.isPackageSuspended(admin, packageName);
+                if (!shouldBlock && wasSuspended) {
+                    dpm.setPackagesSuspended(admin, new String[]{packageName}, false);
+                }
                 boolean updated = dpm.setApplicationHidden(admin, packageName, shouldBlock);
                 boolean hidden = dpm.isApplicationHidden(admin, packageName);
-                if (!updated && wasHidden != shouldBlock) {
+                boolean suspended = dpm.isPackageSuspended(admin, packageName);
+                boolean blocked = hidden || suspended;
+                if (!updated && wasHidden != shouldBlock && blocked != shouldBlock) {
                     errors.add("package-policy-update-rejected:" + packageName);
-                } else if (hidden != shouldBlock) {
+                } else if (blocked != shouldBlock) {
                     errors.add("package-policy-state-mismatch:" + packageName);
                 }
-                if (hidden) {
+                if (blocked) {
                     blockedCount++;
                 } else {
                     allowedCount++;
                 }
             } catch (IllegalArgumentException ignored) {
                 // A known package is not installed on this device.
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // The package disappeared between the inventory and this pass.
             } catch (RuntimeException exception) {
                 errors.add("package-policy:" + packageName + ":"
                         + exception.getClass().getSimpleName());
@@ -876,31 +966,33 @@ public final class LockdownPolicyController {
         }
     }
 
-    private static void unsuspendBrowserProviders(
+    private static void releaseBrowserSuspensions(
             DevicePolicyManager dpm,
             ComponentName admin,
             List<String> errors
     ) {
-        for (String packageName : new String[]{
-                "com.android.chrome",
+        Set<String> packages = new LinkedHashSet<>(LockdownPackages.BROWSER_PACKAGES);
+        packages.addAll(List.of(
                 "com.google.android.webview",
+                "com.android.webview",
                 "com.chrome.beta",
                 "com.chrome.dev"
-        }) {
+        ));
+        for (String packageName : packages) {
             try {
                 String[] failed = dpm.setPackagesSuspended(admin, new String[]{packageName}, false);
                 if (failed.length > 0) {
                     continue;
                 }
                 if (dpm.isPackageSuspended(admin, packageName)) {
-                    errors.add("webview-release-unverified:" + packageName);
+                    errors.add("browser-release-unverified:" + packageName);
                 }
             } catch (PackageManager.NameNotFoundException ignored) {
-                // Provider is not installed.
+                // Browser is not installed.
             } catch (IllegalArgumentException ignored) {
-                // Provider is not installed.
+                // Browser is not installed.
             } catch (RuntimeException exception) {
-                errors.add("webview-release:" + exception.getClass().getSimpleName());
+                errors.add("browser-release:" + exception.getClass().getSimpleName());
             }
         }
     }
@@ -942,23 +1034,6 @@ public final class LockdownPolicyController {
             }
         }
         return installed;
-    }
-
-    private static ComponentName resolveActivity(PackageManager pm, Intent intent) {
-        android.content.pm.ResolveInfo resolved;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            resolved = pm.resolveActivity(
-                    intent,
-                    PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY)
-            );
-        } else {
-            //noinspection deprecation
-            resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-        }
-        if (resolved == null || resolved.activityInfo == null) {
-            return null;
-        }
-        return new ComponentName(resolved.activityInfo.packageName, resolved.activityInfo.name);
     }
 
     private static String summarizeErrors(List<String> errors) {
