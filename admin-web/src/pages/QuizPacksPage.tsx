@@ -25,6 +25,19 @@ import {
   type QuizSigningIdentity,
   type SignedQuizPack
 } from "../quiz";
+import {
+  CURRICULUM_EDITIONS,
+  CURRICULUM_GRADES,
+  CURRICULUM_UNITS,
+  curriculumQuestions,
+  type CurriculumEdition,
+  type CurriculumGrade,
+  type CurriculumGradeFilter,
+  type CurriculumSelection,
+  type CurriculumSubject,
+  type CurriculumUnit,
+  type CurriculumUnitFilter
+} from "../curriculum";
 import { errorText, useI18n } from "../i18n";
 
 const TYPE_LABELS: Record<QuizQuestionType, string> = {
@@ -42,6 +55,10 @@ export function QuizPacksPage() {
   const [title, setTitle] = useState(() => t("Home learning pack"));
   const [version, setVersion] = useState(1);
   const [questions, setQuestions] = useState<EditableQuestion[]>([emptyQuestion("single_choice")]);
+  const [curriculumEdition, setCurriculumEdition] = useState<CurriculumEdition>("pep");
+  const [curriculumGrade, setCurriculumGrade] = useState<CurriculumGradeFilter>(3);
+  const [curriculumUnit, setCurriculumUnit] = useState<CurriculumUnitFilter>(1);
+  const [curriculumSubject, setCurriculumSubject] = useState<CurriculumSubject>("all");
   const [signed, setSigned] = useState<SignedQuizPack | null>(null);
   const [basePack, setBasePack] = useState<ParsedQuizPack | null>(null);
   const [publishMode, setPublishMode] = useState<"full" | "delta">("full");
@@ -115,6 +132,24 @@ export function QuizPacksPage() {
     }
   }, [basePack, identity, questions, version]);
 
+  const curriculumSelection = useMemo<CurriculumSelection>(() => ({
+    edition: curriculumEdition,
+    grade: curriculumGrade,
+    unit: curriculumUnit,
+    subject: curriculumSubject
+  }), [curriculumEdition, curriculumGrade, curriculumSubject, curriculumUnit]);
+
+  const curriculumGenerated = useMemo(
+    () => curriculumQuestions(curriculumSelection),
+    [curriculumSelection]
+  );
+
+  const curriculumCounts = useMemo(() => ({
+    english: curriculumGenerated.filter((question) => question.subject === "english").length,
+    mathematics: curriculumGenerated.filter((question) => question.subject === "mathematics").length,
+    chinese: curriculumGenerated.filter((question) => question.subject === "chinese").length
+  }), [curriculumGenerated]);
+
   function updateQuestion(index: number, patch: Partial<EditableQuestion>) {
     setQuestions((current) => current.map((question, itemIndex) =>
       itemIndex === index ? { ...question, ...patch } : question));
@@ -126,6 +161,89 @@ export function QuizPacksPage() {
 
   function removeQuestion(index: number) {
     setQuestions((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function curriculumSubjectLabel(subject: CurriculumSubject): string {
+    if (subject === "all") return t("All subjects");
+    if (subject === "english") return t("English");
+    if (subject === "mathematics") return t("Mathematics");
+    return t("Chinese");
+  }
+
+  function curriculumTitle(selection: CurriculumSelection): string {
+    const grade = selection.grade === "all"
+      ? t("All grades") : t("Grade {grade}", { grade: selection.grade });
+    const unit = selection.unit === "all"
+      ? t("All units") : t("Unit {unit}", { unit: selection.unit });
+    return t("PEP {grade} {unit}: {subject}", {
+      grade,
+      unit,
+      subject: curriculumSubjectLabel(selection.subject)
+    });
+  }
+
+  function nextPackVersion(): number {
+    const newest = packs.reduce((maximum, pack) => Math.max(maximum, pack.version), 0);
+    return Math.max(version, newest + 1);
+  }
+
+  function cloneQuestions(source: EditableQuestion[]): EditableQuestion[] {
+    return source.map((question) => ({
+      ...question,
+      options: [...question.options],
+      answerIndices: [...question.answerIndices]
+    }));
+  }
+
+  function loadCurriculumIntoEditor() {
+    if (curriculumGenerated.length > 100) {
+      setNotice(t("The full library is published directly to avoid loading hundreds of editor rows. Choose a single grade and unit to preview or edit individual questions."));
+      return;
+    }
+    setError(null);
+    setQuestions(cloneQuestions(curriculumGenerated));
+    setTitle(curriculumTitle(curriculumSelection));
+    setVersion(nextPackVersion());
+    setPublishMode("full");
+    setNotice(t("Loaded {count} curriculum questions into the editor. Review them, then sign and publish.",
+      { count: curriculumGenerated.length }));
+  }
+
+  async function publishCurriculum() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!identity) throw new Error("Create the quiz signing key first");
+      if (curriculumGenerated.length > 500) {
+        throw new Error("The generated curriculum exceeds the 500-question pack limit; publish a smaller grade or unit range");
+      }
+      const packTitle = curriculumTitle(curriculumSelection);
+      const targetVersion = nextPackVersion();
+      const pack = await signQuizPack(targetVersion, curriculumGenerated, identity);
+      const created = await api.createQuizPack(packTitle, pack.publicKeyBase64, pack.envelope);
+      await refreshPacks();
+      setTitle(packTitle);
+      setVersion(pack.version + 1);
+      setSigned(pack);
+      if (curriculumGenerated.length <= 100) {
+        const parsed = await verifyAndParseEnvelope(pack.envelope, identity);
+        setQuestions(cloneQuestions(curriculumGenerated));
+        setBasePack(parsed);
+        setPublishMode("delta");
+      } else {
+        setBasePack(null);
+        setPublishMode("full");
+      }
+      setNotice(t("Curriculum pack version {version} with {count} questions was signed, hosted and activated. Child devices will apply it automatically on their next sync.", {
+        version: created.version,
+        count: pack.questionCount
+      }));
+    } catch (problem) {
+      setError(messageOf(problem));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function generateKey() {
@@ -611,6 +729,75 @@ export function QuizPacksPage() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className="card curriculum-builder">
+        <div className="pack-heading">
+          <div>
+            <h2>{t("Textbook question builder")}</h2>
+            <p className="muted">{t("Generate grade- and unit-based questions from the built-in People's Education Press curriculum. English covers word meaning, word choice and spelling; mathematics covers calculation and word problems; Chinese covers characters, word building and poetry.")}</p>
+          </div>
+          <span className="badge ok">{t("{count} questions", { count: curriculumGenerated.length })}</span>
+        </div>
+        <div className="form-grid pack-fields curriculum-fields">
+          <label>{t("Textbook edition")}
+            <select value={curriculumEdition}
+              onChange={(event) => setCurriculumEdition(event.target.value as CurriculumEdition)}>
+              {CURRICULUM_EDITIONS.map((edition) => (
+                <option key={edition} value={edition}>{t("People's Education Press (PEP)")}</option>
+              ))}
+            </select>
+          </label>
+          <label>{t("Grade")}
+            <select value={curriculumGrade}
+              onChange={(event) => setCurriculumGrade(event.target.value === "all"
+                ? "all" : Number(event.target.value) as CurriculumGrade)}>
+              <option value="all">{t("All grades")}</option>
+              {CURRICULUM_GRADES.map((grade) => (
+                <option key={grade} value={grade}>{t("Grade {grade}", { grade })}</option>
+              ))}
+            </select>
+          </label>
+          <label>{t("Unit")}
+            <select value={curriculumUnit}
+              onChange={(event) => setCurriculumUnit(event.target.value === "all"
+                ? "all" : Number(event.target.value) as CurriculumUnit)}>
+              <option value="all">{t("All units")}</option>
+              {CURRICULUM_UNITS.map((unit) => (
+                <option key={unit} value={unit}>{t("Unit {unit}", { unit })}</option>
+              ))}
+            </select>
+          </label>
+          <label>{t("Subject")}
+            <select value={curriculumSubject}
+              onChange={(event) => setCurriculumSubject(event.target.value as CurriculumSubject)}>
+              <option value="all">{t("All subjects")}</option>
+              <option value="english">{t("English")}</option>
+              <option value="mathematics">{t("Mathematics")}</option>
+              <option value="chinese">{t("Chinese")}</option>
+            </select>
+          </label>
+        </div>
+        <div className="row-actions curriculum-summary">
+          <span className="badge neutral">{t("English: {count} questions", { count: curriculumCounts.english })}</span>
+          <span className="badge neutral">{t("Mathematics: {count} questions", { count: curriculumCounts.mathematics })}</span>
+          <span className="badge neutral">{t("Chinese: {count} questions", { count: curriculumCounts.chinese })}</span>
+        </div>
+        <div className="row-actions">
+          <button className="secondary"
+            disabled={busy || curriculumGenerated.length === 0 || curriculumGenerated.length > 100}
+            onClick={loadCurriculumIntoEditor}>
+            {t("Load into editor")}
+          </button>
+          <button className="primary" disabled={busy || !identity || curriculumGenerated.length === 0}
+            onClick={() => void publishCurriculum()}>
+            {busy ? t("Signing...") : t("Generate, sign and publish")}
+          </button>
+        </div>
+        {curriculumGenerated.length > 100 && (
+          <p className="hint">{t("The full library is published directly to avoid loading hundreds of editor rows. Choose a single grade and unit to preview or edit individual questions.")}</p>
+        )}
+        <p className="hint">{t("After publishing, paired child devices download and activate this pack automatically on their next 15-minute sync. No action is needed on the child device.")}</p>
       </section>
 
       <section className="card">
